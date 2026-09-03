@@ -1,42 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
-<p class="screen-caption">Two ways to secure rake capacity -- and how blending them changes cost, service and risk.</p>
+<p class="screen-caption">Demand at Lakhanpur is seasonal, so a single flat fleet is over-provisioned in the lean months and under-provisioned in the peak. This screen replaces the binary base-vs-spot choice with a four-tier contract portfolio sized to that seasonality.</p>
 
-<div class="grid-2">
+<div class="kpi-row" id="season-kpis"><div class="empty-state">Loading&hellip;</div></div>
+
+<div class="card">
+  <h2>Where the Seasonality Is <span class="qmark">months classified from the data, not hard-coded</span></h2>
+  <p class="card-sub">Mean daily rake requirement by month. A month is called Peak or Lean when it sits more than the classification threshold away from the all-period mean &mdash; on a flat dataset every month would be Shoulder and no seasonality would be claimed.</p>
+  <div class="chart-container tall" id="chart-seasonality"></div>
+  <p class="model-label" id="season-note"></p>
+</div>
+
+<div class="section-title">Recommended Contract Portfolio</div>
+<div class="tier-row" id="tier-row"><div class="empty-state">Loading&hellip;</div></div>
+<p class="model-label" id="sizing-basis" style="margin-top:12px;"></p>
+
+<div class="grid-2" style="margin-top:18px;">
   <div class="card">
-    <h2>Base Fleet <span class="qmark">captive / leased, GPWIS &amp; SFTO</span></h2>
-    <div class="section-title" style="margin-top:6px;">Advantages</div>
-    <ul class="insight-list">
-      <li><span class="dot">&#9679;</span><span>Higher availability certainty</span></li>
-      <li><span class="dot">&#9679;</span><span>Lower marginal dependence on spot IR allotments</span></li>
-      <li><span class="dot">&#9679;</span><span>Better protection during demand spikes</span></li>
-    </ul>
-    <div class="section-title">Disadvantages</div>
-    <ul class="insight-list">
-      <li class="caveat"><span class="dot">&#9679;</span><span>Fixed commitment regardless of daily demand</span></li>
-      <li class="caveat"><span class="dot">&#9679;</span><span>Underutilization risk on low-demand days</span></li>
-    </ul>
+    <h2>Why Tiers Beat One Flat Fleet</h2>
+    <ul class="insight-list" id="why-tiers"><li>Loading&hellip;</li></ul>
   </div>
   <div class="card">
-    <h2>Flexible / Spot Fleet <span class="qmark">FOIS spot bookings</span></h2>
-    <div class="section-title" style="margin-top:6px;">Advantages</div>
+    <h2>Contract Clauses to Negotiate</h2>
     <ul class="insight-list">
-      <li><span class="dot">&#9679;</span><span>Flexible, booked only when needed</span></li>
-      <li><span class="dot">&#9679;</span><span>Lower fixed commitment</span></li>
-      <li><span class="dot">&#9679;</span><span>Useful for absorbing demand spikes</span></li>
-    </ul>
-    <div class="section-title">Disadvantages</div>
-    <ul class="insight-list">
-      <li class="caveat"><span class="dot">&#9679;</span><span>Availability uncertainty (rake allotment not guaranteed)</span></li>
-      <li class="caveat"><span class="dot">&#9679;</span><span>Variable, less predictable cost</span></li>
-      <li class="caveat"><span class="dot">&#9679;</span><span>Potential demurrage / shortage risk</span></li>
+      <li><span class="dot">&#9679;</span><span><b>Volume flexibility band (&plusmn;15%)</b> on the core commitment &mdash; absorbs forecast error without reopening the contract.</span></li>
+      <li><span class="dot">&#9679;</span><span><b>Liquidated damages for non-supply</b> by the lessor &mdash; makes wagon availability the counterparty's risk rather than CIL's. The commercial twin of the Tier 3 option.</span></li>
+      <li><span class="dot">&#9679;</span><span><b>Seasonal rate differentiation</b> &mdash; a lower committed rate in lean months, traded for a firm peak-season commitment.</span></li>
+      <li><span class="dot">&#9679;</span><span><b>Two-tier demurrage</b> (free time, then a penal slab) &mdash; already priced in the cost model; see Appendix A4.</span></li>
+      <li><span class="dot">&#9679;</span><span><b>Backhaul / return-load sharing</b> in the lean season &mdash; monetises rakes that would otherwise sit idle.</span></li>
     </ul>
   </div>
 </div>
 
 <div class="card">
-  <h2>Base Fleet % vs Spot Fleet % <span class="qmark">strategy spectrum</span></h2>
-  <p class="card-sub">Service Level, Spot Dependency and Risk are natural percentages; Total Cost is indexed 0&ndash;100 (lowest&ndash;highest observed on this spectrum) so all four can share one axis. The optimization engine (Screen 07) finds the actual cost-minimizing point on this curve.</p>
+  <h2>Base Fleet % vs Spot Fleet % <span class="qmark">single-tier strategy spectrum</span></h2>
+  <p class="card-sub">The existing single-tier view, retained for comparison. Service Level, Spot Dependency and Risk are natural percentages; Total Cost is indexed 0&ndash;100 (lowest&ndash;highest observed on this spectrum) so all four share one axis. The optimization engine (Screen 07) finds the cost-minimizing point on this curve &mdash; it does not yet price the tiered portfolio above.</p>
   <div class="chart-container tall" id="chart-spectrum"></div>
   <p class="model-label" id="model-label"></p>
 </div>
@@ -44,29 +42,89 @@
 
 {% block extra_js %}
 <script>
+const SEASON_COLOR = { lean: Charts.COLORS.series[2], shoulder: Charts.COLORS.series[0], peak: Charts.COLORS.series[1] };
+
 function normalize(arr) {
   const min = Math.min(...arr), max = Math.max(...arr);
   if (max === min) return arr.map(() => 50);
   return arr.map(v => (v - min) / (max - min) * 100);
 }
 
-async function load() {
+async function loadPortfolio() {
+  const r = await fetch('/api/contract-portfolio');
+  const d = await r.json();
+  const p = d.profile, o = p.overall;
+  const byKey = {};
+  p.seasons.forEach(s => { byKey[s.key] = s; });
+
+  document.getElementById('season-kpis').innerHTML = [
+    { label: 'Peak vs Lean Swing', value: p.is_seasonal ? '+' + p.amplitude_pct.toFixed(0) + '%' : 'none detected', cls: p.is_seasonal ? 'amber' : 'green' },
+    { label: 'Lean Season Mean', value: byKey.lean ? byKey.lean.mean.toFixed(1) + ' rakes/day' : '--' },
+    { label: 'Peak Season Mean', value: byKey.peak ? byKey.peak.mean.toFixed(1) + ' rakes/day' : '--' },
+    { label: 'Observed Peak Day', value: o.peak.toFixed(1) + ' rakes/day' },
+    { label: 'Contracted Capacity', value: d.contracted_capacity.toFixed(1) + ' rakes/day', cls: 'green' },
+  ].map(k => `<div class="kpi-card ${k.cls || ''}"><div class="label">${k.label}</div><div class="value">${k.value}</div></div>`).join('');
+
+  const months = p.monthly.map(m => m.month_period);
+  Charts.bar('chart-seasonality', ['lean', 'shoulder', 'peak'].map(key => ({
+    x: months,
+    y: p.monthly.map(m => m.season === key ? m.mean_required : null),
+    name: key.charAt(0).toUpperCase() + key.slice(1),
+    color: SEASON_COLOR[key],
+  })), {
+    layout: {
+      yaxis: { title: 'Mean required rakes/day' },
+      shapes: [{ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: o.mean, y1: o.mean,
+                 line: { color: Charts.COLORS.inkMuted, width: 1.5, dash: 'dash' } }],
+      annotations: [{ xref: 'paper', x: 1, y: o.mean, xanchor: 'right', yshift: 10,
+                      text: 'all-period mean ' + o.mean.toFixed(1), showarrow: false,
+                      font: { size: 10.5, color: Charts.COLORS.inkMuted } }],
+    }
+  });
+  document.getElementById('season-note').textContent =
+    'Classification threshold: ' + (p.threshold_pct * 100).toFixed(0) + '% from the all-period mean of '
+    + o.mean.toFixed(2) + ' rakes/day, across ' + o.n_days + ' days.';
+
+  document.getElementById('tier-row').innerHTML = d.tiers.map(t => `
+    <div class="tier-card t${t.tier}">
+      <div class="n">Tier ${t.tier}</div>
+      <h4>${t.name}</h4>
+      <div class="instrument">${t.instrument}</div>
+      <div class="size">${t.key === 'spot' ? 'residual' : t.rakes.toFixed(1)}<span class="unit">${t.key === 'spot' ? '' : ' rakes/day'}</span></div>
+      <div class="basis">${t.basis}</div>
+      <p>${t.rationale}</p>
+    </div>`).join('');
+  document.getElementById('sizing-basis').textContent = d.sizing_basis;
+
+  const tops = d.season_top_ups.map(t => `${t.season_label} +${t.top_up.toFixed(1)}`).join(' &middot; ');
+  const lean = byKey.lean, peak = byKey.peak;
+  const items = [];
+  if (lean && peak) {
+    items.push(`The lean season averages ${lean.mean.toFixed(1)} rakes/day against ${peak.mean.toFixed(1)} in the peak &mdash; a ${p.amplitude_pct.toFixed(0)}% swing that one flat commitment cannot serve efficiently at both ends.`);
+  }
+  items.push(`Tier 1 is sized at the all-period p10 (${o.p10.toFixed(1)} rakes/day), so the take-or-pay commitment is capacity in use on roughly nine days in ten &mdash; the idle exposure that makes take-or-pay risky simply is not there.`);
+  items.push(`Seasonal top-ups are sized per season (${tops} rakes/day), buying peak capacity only for the months that need it.`);
+  items.push(`Tier 3 covers the gap up to the observed peak of ${o.peak.toFixed(1)} rakes/day by buying the <b>right</b> to a rake rather than the rake itself &mdash; the only tier that directly addresses wagons not being available in the market.`);
+  document.getElementById('why-tiers').innerHTML = items.map(i => `<li><span class="dot">&#9679;</span><span>${i}</span></li>`).join('');
+}
+
+async function loadSpectrum() {
   const overrides = await AssumptionsStore.get();
   const r = await fetch('/api/optimize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides) });
   const d = await r.json();
   const c = d.cost_curve;
   const basePct = c.B.map(b => b / c.B[c.B.length - 1] * 100);
-  const risk = c.service_level_pct.map(v => (1 - v) * 100);
 
   Charts.line('chart-spectrum', [
     { x: basePct, y: normalize(c.total_cost), name: 'Total Cost', color: Charts.COLORS.series[0] },
     { x: basePct, y: c.service_level_pct.map(v => v * 100), name: 'Service Level %', color: Charts.COLORS.good },
     { x: basePct, y: c.spot_dependency_pct.map(v => v * 100), name: 'Spot Dependency %', color: Charts.COLORS.series[1] },
-    { x: basePct, y: risk, name: 'Risk (indexed)', color: Charts.COLORS.critical },
+    { x: basePct, y: c.service_level_pct.map(v => (1 - v) * 100), name: 'Risk (indexed)', color: Charts.COLORS.critical },
   ], { layout: { xaxis: { title: 'Base Fleet Capacity, as % of spectrum', ticksuffix: '%' }, yaxis: { title: 'Indexed value' } } });
 
   document.getElementById('model-label').textContent = d.label;
 }
-document.addEventListener('DOMContentLoaded', load);
+
+document.addEventListener('DOMContentLoaded', () => { loadPortfolio(); loadSpectrum(); });
 </script>
 {% endblock %}

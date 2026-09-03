@@ -18,6 +18,18 @@
   </div>
 </div>
 
+<div class="section-title">How to Contract It</div>
+<div class="card">
+  <p class="card-sub" style="margin-top:0;">The cost model gives a base-vs-spot ratio. This is the procurement structure that delivers it &mdash; four tiers sized to the observed seasonality, so lean-month capacity is not paid for at peak-month levels. Detail and the seasonality behind it are on Screen 06.</p>
+  <div class="table-wrap"><table class="data-table" id="tier-table"></table></div>
+  <p class="model-label" id="tier-basis"></p>
+  <ul class="insight-list" style="margin-top:14px;">
+    <li><span class="dot">&#9679;</span><span><b>Tier 3 is the answer to wagon availability.</b> A reservation fee buys the right to a rake at a pre-agreed strike, converting "the market may not have one" from an operational risk into a contractual guarantee.</span></li>
+    <li><span class="dot">&#9679;</span><span>Pair it with <b>liquidated damages for non-supply</b> so the lessor carries the availability risk, and a <b>&plusmn;15% volume flexibility band</b> so forecast error does not reopen the contract.</span></li>
+    <li><span class="dot">&#9679;</span><span>Negotiate <b>seasonal rate differentiation</b>: a lower committed rate through the lean months in exchange for a firm peak-season commitment.</span></li>
+  </ul>
+</div>
+
 <div class="section-title">Why This Recommendation</div>
 <div class="reason-row" id="reason-row"></div>
 {% endblock %}
@@ -78,6 +90,20 @@ async function load() {
     <div class="reason-card"><div class="n">2</div><h4>Capacity Protection</h4><p>A ${rec.B.toFixed(1)} rakes/day base fleet protects against demand and rake-availability uncertainty, lifting service level to ${(rec.service_level_pct*100).toFixed(1)}%.</p></div>
     <div class="reason-card"><div class="n">3</div><h4>Flexibility</h4><p>The remaining ${spotPct.toFixed(0)}% spot component absorbs temporary demand spikes without over-committing fixed capacity.</p></div>`;
 }
-document.addEventListener('DOMContentLoaded', load);
+async function loadContractTiers() {
+  const r = await fetch('/api/contract-portfolio');
+  const d = await r.json();
+  document.getElementById('tier-table').innerHTML = `
+    <thead><tr><th>Tier</th><th>Instrument</th><th>Size</th><th>Sized From</th><th>Role</th></tr></thead>
+    <tbody>${d.tiers.map(t => `<tr${t.key === 'options' ? ' class="highlight"' : ''}>
+      <td><b>${t.tier}. ${t.name}</b></td>
+      <td>${t.instrument}</td>
+      <td>${t.key === 'spot' ? 'residual' : t.rakes.toFixed(1) + ' rakes/day'}</td>
+      <td>${t.basis}</td>
+      <td style="white-space:normal;">${t.rationale}</td></tr>`).join('')}</tbody>`;
+  document.getElementById('tier-basis').textContent = d.sizing_basis;
+}
+
+document.addEventListener('DOMContentLoaded', () => { load(); loadContractTiers(); });
 </script>
 {% endblock %}
