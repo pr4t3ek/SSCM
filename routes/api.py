@@ -71,6 +71,20 @@ def wagon_requirement():
     return jsonify(json_safe(view))
 
 
+@api_bp.route("/contract-portfolio")
+def contract_portfolio():
+    """Four-tier contract sizing + the data-derived season profile it rests on.
+
+    Percentile-derived, so it deliberately does NOT depend on the optimization
+    engine and moves no cost figure on any other screen.
+    """
+    bundle = get_dataset()
+    rake_capacity_t = float(request.args.get("rake_capacity", config.DEFAULT_PARAMS["rake_capacity_t"]["value"]))
+    safety_buffer_pct = float(request.args.get("safety_buffer", config.DEFAULT_PARAMS["safety_buffer_pct"]["value"]))
+    return jsonify(json_safe(analytics.contract_portfolio(
+        bundle, rake_capacity_t=rake_capacity_t, safety_buffer_pct=safety_buffer_pct)))
+
+
 @api_bp.route("/scenarios")
 def scenarios():
     return jsonify(json_safe(optimization_service.scenarios(_overrides_from_query())))
