@@ -18,14 +18,22 @@
   <h2>Why Breakpoint Search, Not a General Solver</h2>
   <p class="card-sub" style="font-size:13px; line-height:1.7;">
     Total(B) is a finite sum of <code>max(linear, 0)</code> hinge terms plus a linear term in B, so it is
-    <b>convex and piecewise-linear</b>. A convex piecewise-linear function's minimum over a continuum is always
-    attained at one of its <b>breakpoints</b> -- the sorted union of every day's Required(t) and Required(t) &minus; SpotCap.
+    <b>piecewise-linear</b>. A piecewise-linear function's minimum over a bounded interval is always attained at one of
+    its <b>breakpoints</b> or an endpoint -- here the sorted union, across every day, of Required(t),
+    Required(t) &minus; SpotCap, and Required(t) + FreeAllowance (the last from the two-tier demurrage charge).
     Enumerating those breakpoints and evaluating cost at each is <b>exact</b> (not an approximation like a grid search),
     and fast: O(N) candidate points &times; O(N) vectorized cost evaluation for N &asymp; 300&ndash;365 days -- well under the
     latency budget needed for the What-If Simulator to recompute on every slider drag. SciPy's
     <code>minimize_scalar(bounded=True)</code> is used only as a development-time cross-check against this result,
     never in the live request path. OR-Tools was not used: there is no combinatorial or integer structure here that
-    would justify it -- this is a 1-D convex problem.
+    would justify it -- this is a 1-D problem.
+  </p>
+  <p class="card-sub" style="font-size:13px; line-height:1.7; margin-top:10px;">
+    Total(B) is additionally <b>convex</b> whenever the Punitive Demurrage rate is set at or above the normal
+    Demurrage rate -- the intended configuration -- because demurrage is then a convex, non-decreasing function of
+    Idle(t), which is itself convex in B. Exactness of the search does not rely on that: it needs only
+    piecewise-linearity and a complete breakpoint set. Convexity is what guarantees the single-minimum shape the
+    cost curve below displays.
   </p>
 </div>
 

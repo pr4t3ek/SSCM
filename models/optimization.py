@@ -2,9 +2,19 @@
 
 Decision variable: B = Base Fleet Capacity (rakes/day).
 Total(B) is a finite sum of max(linear, 0) hinge terms plus a linear term in
-B, so it is convex and piecewise-linear -- its minimum is always attained at
-one of the "breakpoints" where a hinge term changes slope (the sorted union
-of {Required(t)} and {Required(t) - spot_availability_cap} across all days).
+B, so it is piecewise-linear in B. A piecewise-linear function attains its
+minimum over a bounded interval at a breakpoint or an endpoint, so enumerating
+every breakpoint is exact. The breakpoints are the sorted union, across all
+days, of {Required(t)}, {Required(t) - spot_availability_cap} and
+{Required(t) + demurrage_free_idle} -- the last family coming from the
+two-tier (free-allowance then punitive) demurrage charge; see
+`candidate_breakpoints_array`.
+
+Total(B) is additionally *convex* whenever the punitive demurrage rate is >=
+the normal rate, which is the intended configuration: demurrage is then a
+convex non-decreasing function of Idle(t), itself convex in B. Exactness of
+the search does not depend on that -- it needs only piecewise-linearity and a
+complete breakpoint set -- but the convexity claim made on Appendix A5 does.
 
 We therefore solve exactly via breakpoint enumeration rather than a general
 `scipy.optimize` search or OR-Tools: for ~300-365 days this is O(N) candidate
@@ -46,10 +56,27 @@ class OptimizationResult:
     candidate_breakpoints: pd.DataFrame
 
 
-def candidate_breakpoints_array(required_rakes: np.ndarray, spot_cap: float, B_max: float) -> np.ndarray:
+def candidate_breakpoints_array(
+    required_rakes: np.ndarray,
+    spot_cap: float,
+    B_max: float,
+    demurrage_free_idle: float = 0.0,
+) -> np.ndarray:
+    """Every B at which some hinge term in Total(B) changes slope.
+
+    Three families, one per hinge:
+      Required(t)                        -- spot/idle switchover
+      Required(t) - spot_cap             -- shortage kicks in
+      Required(t) + demurrage_free_idle  -- idle crosses the free allowance
+                                            into the punitive demurrage tier
+
+    Omitting the third family would leave breakpoint enumeration blind to the
+    punitive-tier kinks and it would no longer be exact.
+    """
     return np.unique(np.concatenate([
         required_rakes,
         np.clip(required_rakes - spot_cap, 0, None),
+        np.clip(required_rakes + demurrage_free_idle, 0, B_max),
         [0.0, B_max],
     ]))
 
@@ -58,7 +85,12 @@ def optimize_base_fleet(required_rakes: np.ndarray, params: CostParams) -> Optim
     required_rakes = np.asarray(required_rakes, dtype=float)
     B_max = float(required_rakes.max()) * 1.3 if len(required_rakes) else 1.0
 
-    breakpoints = candidate_breakpoints_array(required_rakes, params.spot_availability_cap_rakes_per_day, B_max)
+    breakpoints = candidate_breakpoints_array(
+        required_rakes,
+        params.spot_availability_cap_rakes_per_day,
+        B_max,
+        params.demurrage_free_idle_rakes_per_day,
+    )
     curve_at_breakpoints = total_cost_curve(required_rakes, params, breakpoints)
 
     best_idx = curve_at_breakpoints["total_cost"].idxmin()
@@ -144,6 +176,7 @@ TORNADO_VARIABLES = [
     {"key": "base_cost_per_rake_per_day", "label": "Base Fleet Cost", "kind": "param"},
     {"key": "spot_availability_cap_rakes_per_day", "label": "Wagon Availability", "kind": "param"},
     {"key": "demurrage_cost_per_rake_per_day", "label": "Demurrage Cost", "kind": "param"},
+    {"key": "demurrage_penalty_cost_per_rake_per_day", "label": "Punitive Demurrage", "kind": "param"},
     {"key": "shortage_cost_per_tonne", "label": "Shortage Penalty", "kind": "param"},
 ]
 

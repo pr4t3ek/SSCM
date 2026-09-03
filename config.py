@@ -88,7 +88,29 @@ DEFAULT_PARAMS = {
         "value": 6000, "min": 1000, "max": 20000, "step": 500,
         "unit": "Rs/rake/day", "provenance": "ASSUMPTION",
         "label": "Demurrage Cost",
-        "description": "Cost of an idle/overcommitted base-fleet rake on a low-demand day, illustrative.",
+        "description": "Normal-rate cost of an idle/overcommitted base-fleet rake on a low-demand day, illustrative.",
+        "simulator_visible": True,
+    },
+    "demurrage_free_idle_rakes_per_day": {
+        "value": 2.0, "min": 0.0, "max": 10.0, "step": 0.5,
+        "unit": "rakes/day", "provenance": "ASSUMPTION",
+        "label": "Demurrage Free Allowance",
+        "description": (
+            "Idle base-fleet rakes tolerated per day at the normal demurrage rate. Idle capacity "
+            "beyond this is charged the punitive rate instead, mirroring the free-time-then-penal "
+            "structure of Indian Railways demurrage, illustrative."
+        ),
+        "simulator_visible": True,
+    },
+    "demurrage_penalty_cost_per_rake_per_day": {
+        "value": 12000, "min": 2000, "max": 40000, "step": 500,
+        "unit": "Rs/rake/day", "provenance": "ASSUMPTION",
+        "label": "Punitive Demurrage Rate",
+        "description": (
+            "Higher rate charged on idle base-fleet rakes above the free allowance, illustrative. "
+            "Keep it at or above the normal demurrage rate: a lower value makes the cost curve "
+            "non-convex (the optimizer stays exact either way, but the convexity claim on A5 does not)."
+        ),
         "simulator_visible": True,
     },
     "shortage_cost_per_tonne": {

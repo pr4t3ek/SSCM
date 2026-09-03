@@ -7,11 +7,14 @@
   <div style="font-family: ui-monospace, monospace; font-size:13px; background:#f6f7f9; border-radius:8px; padding:16px; line-height:2;">
     Spot(t) &nbsp;= max( Required(t) &minus; B , 0 )<br>
     Idle(t) &nbsp;&nbsp;= max( B &minus; Required(t) , 0 )<br>
+    NormalIdle(t) = min( Idle(t) , FreeAllowance )<br>
+    PenalIdle(t) &nbsp;= max( Idle(t) &minus; FreeAllowance , 0 )<br>
     Shortfall(t) = max( Spot(t) &minus; SpotCap , 0 )<br>
     UnmetTonnes(t) = Shortfall(t) &times; RakeCapacity<br><br>
     <b>Total(B)</b> = N&times;B&times;BaseCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Base Fleet Cost</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; Spot(t)&times;SpotCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Spot Cost</span><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; Idle(t)&times;DemurrageCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Demurrage</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; NormalIdle(t)&times;DemurrageCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Demurrage</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; PenalIdle(t)&times;PunitiveDemurrage&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Demurrage Penalty</span><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; UnmetTonnes(t)&times;ShortageCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Shortage Penalty</span>
   </div>
   <p class="card-sub" style="margin-top:14px;">
@@ -20,6 +23,13 @@
     rather than a generic siding-delay fee. This is a modeling choice, stated here rather than presented as an unquestioned fact.
     Min-service-level and the spot-availability cap are <b>soft targets</b> reported alongside the cost-optimal point, not hard
     constraints baked into the objective.
+  </p>
+  <p class="card-sub" style="margin-top:10px;">
+    Demurrage is charged in <b>two tiers</b>, mirroring the free-time-then-penal structure of real Indian Railways demurrage:
+    idle capacity up to the <b>Free Allowance</b> is charged the normal rate, and everything above it the higher
+    <b>Punitive Demurrage</b> rate. This makes over-committing the base fleet progressively more expensive rather than
+    linearly so. Keeping the punitive rate at or above the normal rate is what keeps Total(B) convex -- see A5; a lower
+    punitive rate is permitted (the search stays exact) but forfeits that property.
   </p>
 </div>
 
@@ -49,7 +59,8 @@ async function load() {
   Charts.waterfall('chart-waterfall', [
     { label: 'Base Fleet Cost', value: rec.base_fleet_cost },
     { label: 'Spot Cost', value: rec.spot_cost },
-    { label: 'Demurrage', value: rec.demurrage_cost },
+    { label: 'Demurrage', value: rec.demurrage_normal_cost },
+    { label: 'Demurrage Penalty', value: rec.demurrage_penalty_cost },
     { label: 'Shortage Penalty', value: rec.shortage_cost },
     { label: 'Total Cost', value: rec.total_cost, measure: 'total' },
   ], { fmt: Charts.fmtRupee });
