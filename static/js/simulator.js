@@ -21,6 +21,8 @@
       spot_cost_per_rake_per_trip: +document.getElementById('s-spot-cost').value,
       min_service_level_pct: +document.getElementById('s-service-target').value / 100,
       demurrage_cost_per_rake_per_day: +document.getElementById('s-demurrage').value,
+      demurrage_free_idle_rakes_per_day: +document.getElementById('s-demurrage-free').value,
+      demurrage_penalty_cost_per_rake_per_day: +document.getElementById('s-demurrage-penalty').value,
     };
   }
 
@@ -108,6 +110,8 @@
     wireSlider('s-spot-cost', 'v-spot-cost', v => Charts.fmtRupee(+v));
     wireSlider('s-service-target', 'v-service-target', v => v + '%');
     wireSlider('s-demurrage', 'v-demurrage', v => Charts.fmtRupee(+v));
+    wireSlider('s-demurrage-free', 'v-demurrage-free', v => (+v).toFixed(1) + ' rakes/day');
+    wireSlider('s-demurrage-penalty', 'v-demurrage-penalty', v => Charts.fmtRupee(+v));
     runSimulation();
   }
 

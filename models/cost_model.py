@@ -4,6 +4,8 @@ Total(B) = Base Fleet Cost + Spot Cost + Expected Demurrage + Expected Shortage 
 
     Spot_t        = max(Required(t) - B, 0)                     # spot rakes sourced that day
     Idle_t        = max(B - Required(t), 0)                      # base-fleet rakes unused that day
+    NormalIdle_t  = min(Idle_t, demurrage_free_idle)             # idle within the free allowance
+    PenalIdle_t   = max(Idle_t - demurrage_free_idle, 0)         # idle beyond it
     Shortfall_t   = max(Spot_t - spot_availability_cap, 0)        # spot demand IR couldn't fill
     UnmetTonnes_t = Shortfall_t * rake_capacity_t
 
@@ -12,6 +14,18 @@ own framing ("demurrage/overbooking charges during slumps") -- i.e. an
 overcommitted captive/leased fleet sitting idle when demand is low, not a
 generic siding-delay charge. This modeling choice is stated explicitly on the
 Cost Model appendix page rather than presented as an unquestioned fact.
+
+Demurrage itself is charged in two tiers, mirroring the free-time-then-penal
+structure of real Indian Railways demurrage: idle capacity up to
+`demurrage_free_idle_rakes_per_day` is charged the normal rate, and everything
+above it the (higher) punitive rate. The total stays reported as one
+`demurrage_cost` figure so existing screens are unaffected; the penal share is
+broken out separately for the Cost Model appendix.
+
+Note for `models.optimization`: the free allowance introduces a *new kink* in
+Total(B) at B = Required(t) + free_idle for every day t. Those points must be
+in the optimizer's candidate breakpoint set or breakpoint enumeration stops
+being exact.
 
 All rupee parameters below are ASSUMPTION-grade illustrative defaults (see
 config.DEFAULT_PARAMS for provenance), never fabricated official CIL/Indian
@@ -34,6 +48,8 @@ class CostParams:
     base_cost_per_rake_per_day: float = 8000
     spot_cost_per_rake_per_trip: float = 15000
     demurrage_cost_per_rake_per_day: float = 6000
+    demurrage_free_idle_rakes_per_day: float = 2.0
+    demurrage_penalty_cost_per_rake_per_day: float = 12000
     shortage_cost_per_tonne: float = 150
     spot_availability_cap_rakes_per_day: float = 16
     min_service_level_pct: float = 0.95
@@ -55,12 +71,17 @@ def cost_breakdown_for_B(B: float, required_rakes: np.ndarray, params: CostParam
 
     spot = np.maximum(required_rakes - B, 0)
     idle = np.maximum(B - required_rakes, 0)
+    free_allowance = params.demurrage_free_idle_rakes_per_day
+    normal_idle = np.minimum(idle, free_allowance)
+    penal_idle = np.maximum(idle - free_allowance, 0)
     shortfall = np.maximum(spot - params.spot_availability_cap_rakes_per_day, 0)
     unmet_tonnes = shortfall * params.rake_capacity_t
 
     base_fleet_cost = n_days * B * params.base_cost_per_rake_per_day
     spot_cost = float(spot.sum()) * params.spot_cost_per_rake_per_trip
-    demurrage_cost = float(idle.sum()) * params.demurrage_cost_per_rake_per_day
+    demurrage_normal_cost = float(normal_idle.sum()) * params.demurrage_cost_per_rake_per_day
+    demurrage_penalty_cost = float(penal_idle.sum()) * params.demurrage_penalty_cost_per_rake_per_day
+    demurrage_cost = demurrage_normal_cost + demurrage_penalty_cost
     shortage_cost = float(unmet_tonnes.sum()) * params.shortage_cost_per_tonne
     total_cost = base_fleet_cost + spot_cost + demurrage_cost + shortage_cost
 
@@ -72,10 +93,13 @@ def cost_breakdown_for_B(B: float, required_rakes: np.ndarray, params: CostParam
         "base_fleet_cost": float(base_fleet_cost),
         "spot_cost": float(spot_cost),
         "demurrage_cost": float(demurrage_cost),
+        "demurrage_normal_cost": float(demurrage_normal_cost),
+        "demurrage_penalty_cost": float(demurrage_penalty_cost),
         "shortage_cost": float(shortage_cost),
         "total_cost": float(total_cost),
         "avg_spot_rakes_per_day": float(spot.mean()) if n_days else 0.0,
         "avg_idle_rakes_per_day": float(idle.mean()) if n_days else 0.0,
+        "avg_penal_idle_rakes_per_day": float(penal_idle.mean()) if n_days else 0.0,
         "avg_unmet_tonnes_per_day": float(unmet_tonnes.mean()) if n_days else 0.0,
         "total_unmet_tonnes": float(unmet_tonnes.sum()),
         "service_level_pct": service_level_pct,
@@ -95,13 +119,18 @@ def total_cost_curve(required_rakes: np.ndarray, params: CostParams, B_range: np
 
     spot = np.maximum(req - B, 0)
     idle = np.maximum(B - req, 0)
+    free_allowance = params.demurrage_free_idle_rakes_per_day
+    normal_idle = np.minimum(idle, free_allowance)
+    penal_idle = np.maximum(idle - free_allowance, 0)
     shortfall = np.maximum(spot - params.spot_availability_cap_rakes_per_day, 0)
     unmet_tonnes = shortfall * params.rake_capacity_t
 
     base_fleet_cost = n_days * B_range * params.base_cost_per_rake_per_day
     spot_sum = spot.sum(axis=0)
     spot_cost = spot_sum * params.spot_cost_per_rake_per_trip
-    demurrage_cost = idle.sum(axis=0) * params.demurrage_cost_per_rake_per_day
+    demurrage_normal_cost = normal_idle.sum(axis=0) * params.demurrage_cost_per_rake_per_day
+    demurrage_penalty_cost = penal_idle.sum(axis=0) * params.demurrage_penalty_cost_per_rake_per_day
+    demurrage_cost = demurrage_normal_cost + demurrage_penalty_cost
     shortage_cost = unmet_tonnes.sum(axis=0) * params.shortage_cost_per_tonne
     total_cost = base_fleet_cost + spot_cost + demurrage_cost + shortage_cost
     service_level_pct = (shortfall == 0).mean(axis=0)
@@ -113,6 +142,8 @@ def total_cost_curve(required_rakes: np.ndarray, params: CostParams, B_range: np
         "base_fleet_cost": base_fleet_cost,
         "spot_cost": spot_cost,
         "demurrage_cost": demurrage_cost,
+        "demurrage_normal_cost": demurrage_normal_cost,
+        "demurrage_penalty_cost": demurrage_penalty_cost,
         "shortage_cost": shortage_cost,
         "total_cost": total_cost,
         "service_level_pct": service_level_pct,

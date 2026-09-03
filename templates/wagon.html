@@ -19,7 +19,7 @@
     <h2>Key Inputs</h2>
     <div class="control-group">
       <label>Rake Capacity <span class="val" id="v-rake-capacity">4,000 t</span></label>
-      <input type="range" id="s-rake-capacity" min="2500" max="5500" step="100" value="4000">
+      <input type="range" id="s-rake-capacity" min="2500" max="4800" step="100" value="4000">
     </div>
     <div class="control-group">
       <label>Safety Buffer <span class="val" id="v-safety-buffer">8%</span></label>
@@ -69,7 +69,11 @@
 {% block extra_js %}
 <script>
 let latestView = null;
-const NOMINAL_SPOT_CAP = 16;
+// Nominal spot-rake capacity, resolved from config.DEFAULT_PARAMS via
+// AssumptionsStore on load so an edit on Appendix A3 applies here too.
+// The literal is only a fallback if that fetch fails; it mirrors
+// config.DEFAULT_PARAMS["spot_availability_cap_rakes_per_day"].
+let nominalSpotCap = 16;
 
 function fmt1(n) { return n.toFixed(1); }
 
@@ -85,7 +89,7 @@ function render() {
   if (!latestView) return;
   const baseFleet = +document.getElementById('s-base-fleet').value;
   const wagonAvail = +document.getElementById('s-wagon-avail').value / 100;
-  const availableCapacity = baseFleet + NOMINAL_SPOT_CAP * wagonAvail;
+  const availableCapacity = baseFleet + nominalSpotCap * wagonAvail;
 
   const ts = latestView.timeseries;
   const s = latestView.summary;
@@ -125,11 +129,22 @@ function wireSlider(id, valId, fmt, onInput) {
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+async function loadNominalSpotCap() {
+  try {
+    const a = await AssumptionsStore.get();
+    const cap = a && a.spot_availability_cap_rakes_per_day;
+    if (cap != null && !Number.isNaN(+cap)) nominalSpotCap = +cap;
+  } catch (e) {
+    // Keep the fallback above; the screen still renders.
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
   wireSlider('s-rake-capacity', 'v-rake-capacity', v => Charts.fmtInt(+v) + ' t', fetchView);
   wireSlider('s-safety-buffer', 'v-safety-buffer', v => v + '%', fetchView);
   wireSlider('s-base-fleet', 'v-base-fleet', v => (+v).toFixed(1) + ' rakes/day', render);
   wireSlider('s-wagon-avail', 'v-wagon-avail', v => v + '%', render);
+  await loadNominalSpotCap();
   fetchView();
 });
 </script>
