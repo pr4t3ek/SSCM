@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block filter_bar %}
+<div class="filter-bar">
+  <div><label>Aggregation</label>
+    <div class="seg" id="freq-toggle" style="display:inline-flex;">
+      <button data-freq="D" class="active">Daily</button>
+      <button data-freq="W">Weekly</button>
+      <button data-freq="M">Monthly</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<p class="screen-caption">Where the operational problem actually shows up -- across time, by day, and shift-by-shift.</p>
+
+<div class="kpi-row" id="kpi-strip"><div class="empty-state">Loading&hellip;</div></div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Demand vs Dispatch</h2>
+    <p class="card-sub">The gap between the two lines is unmet demand.</p>
+    <div class="chart-container tall" id="chart-gap"></div>
+  </div>
+  <div class="card">
+    <h2>Dispatch Deficit</h2>
+    <p class="card-sub">Demand minus dispatch, by period.</p>
+    <div class="chart-container tall" id="chart-deficit-bar"></div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Deficit Heatmap <span class="qmark">Date &times; Shift</span></h2>
+    <p class="card-sub">Darker = larger shortfall that shift.</p>
+    <div class="chart-container tall" id="chart-heatmap"></div>
+  </div>
+  <div class="card">
+    <h2>Demand vs Dispatch <span class="qmark">by shift</span></h2>
+    <p class="card-sub">Points below the dashed line indicate unmet demand for that shift.</p>
+    <div class="chart-container tall" id="chart-scatter"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadKPIStrip() {
+  const r = await fetch('/api/kpis');
+  const k = await r.json();
+  document.getElementById('kpi-strip').innerHTML = [
+    { label: 'Avg Deficit / Shift', value: Charts.fmtInt(k.avg_deficit_per_shift_t) + ' t', cls: 'amber' },
+    { label: 'Maximum Deficit', value: Charts.fmtInt(k.peak_deficit_t) + ' t', cls: 'red' },
+    { label: '% Shifts w/ Deficit', value: Charts.fmtPct(k.pct_shifts_positive_deficit, 0), cls: 'red' },
+    { label: 'Average Fulfilment', value: Charts.fmtPct(k.fulfilment_pct), cls: k.fulfilment_status },
+  ].map(c => `<div class="kpi-card ${c.cls}"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('');
+}
+
+async function loadTimeCharts(freq) {
+  const r = await fetch('/api/demand-dispatch?freq=' + freq);
+  const d = await r.json();
+  Charts.line('chart-gap', [
+    { x: d.dates, y: d.demand, name: 'Demand', color: Charts.COLORS.series[1] },
+    { x: d.dates, y: d.dispatch, name: 'Dispatch', color: Charts.COLORS.series[2], fill: true },
+  ]);
+  Charts.bar('chart-deficit-bar', [
+    { x: d.dates, y: d.deficit, name: 'Deficit', color: Charts.COLORS.critical },
+  ], { layout: { showlegend: false } });
+}
+
+async function loadHeatmap() {
+  const r = await fetch('/api/shift-analysis?detail=true');
+  const d = await r.json();
+  const h = d.heatmap;
+  const z = h.shift_labels.map((_, si) => h.dates.map((_, di) => h.values[di][si]));
+  Charts.heatmap('chart-heatmap', { z, x: h.dates, y: h.shift_labels }, { layout: { margin: { l: 70, r: 20, t: 10, b: 40 } } });
+}
+
+async function loadScatter() {
+  const r = await fetch('/api/data-explorer?page=1&page_size=1000');
+  const d = await r.json();
+  const x = d.rows.map(row => row.coal_demanded_t);
+  const y = d.rows.map(row => row.coal_dispatched_t);
+  Charts.scatter('chart-scatter', { x, y, name: 'Shifts' }, { referenceLine: true, hovertemplate: 'Demand %{x:,.0f} t<br>Dispatch %{y:,.0f} t<extra></extra>' });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadKPIStrip();
+  loadTimeCharts('D');
+  loadHeatmap();
+  loadScatter();
+
+  document.getElementById('freq-toggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    document.querySelectorAll('#freq-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadTimeCharts(btn.dataset.freq);
+  });
+});
+</script>
+{% endblock %}

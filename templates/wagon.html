@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Converting the coal-movement problem into a rake (wagon) requirement problem.</p>
+
+<div class="flow-row" style="margin-bottom:18px;">
+  <div class="flow-step"><div class="flow-label">Coal Requirement</div><div class="flow-value">Demand</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Rake Capacity</div><div class="flow-value" id="wf-cap">4,000 t</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Required Rakes</div><div class="flow-value" id="wf-req">&ndash;</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Base + Spot Fleet</div><div class="flow-value" id="wf-avail">&ndash;</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step" id="wf-gap-box"><div class="flow-label">Capacity Gap</div><div class="flow-value" id="wf-gap">&ndash;</div></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Key Inputs</h2>
+    <div class="control-group">
+      <label>Rake Capacity <span class="val" id="v-rake-capacity">4,000 t</span></label>
+      <input type="range" id="s-rake-capacity" min="2500" max="5500" step="100" value="4000">
+    </div>
+    <div class="control-group">
+      <label>Safety Buffer <span class="val" id="v-safety-buffer">8%</span></label>
+      <input type="range" id="s-safety-buffer" min="0" max="25" step="1" value="8">
+    </div>
+    <div class="control-group">
+      <label>Base Fleet Capacity <span class="val" id="v-base-fleet">17 rakes/day</span></label>
+      <input type="range" id="s-base-fleet" min="0" max="35" step="0.5" value="17">
+    </div>
+    <div class="control-group">
+      <label>Wagon Availability (spot) <span class="val" id="v-wagon-avail">100%</span></label>
+      <input type="range" id="s-wagon-avail" min="70" max="100" step="1" value="100">
+    </div>
+    <p class="model-label">Advanced cost/service parameters live in Appendix &rarr; Assumptions.</p>
+  </div>
+  <div class="card">
+    <h2>Peak Rake Requirement</h2>
+    <p class="card-sub">The single highest-demand day observed -- the number a contracting decision must be able to absorb.</p>
+    <div class="kpi-card" style="max-width:260px;">
+      <div class="label">Peak Rakes / Day</div>
+      <div class="value" id="peak-rakes" style="font-size:36px;">&ndash;</div>
+      <div class="sub" id="peak-date"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Rake Requirement Trend</h2>
+  <p class="card-sub">Required rakes/day over time, at current Rake Capacity &amp; Safety Buffer assumptions.</p>
+  <div class="chart-container tall" id="chart-req-trend"></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Required vs Available Capacity</h2>
+    <p class="card-sub">Dashed lines show your configured Base Fleet and Base+Spot capacity.</p>
+    <div class="chart-container tall" id="chart-req-vs-avail"></div>
+  </div>
+  <div class="card">
+    <h2>Capacity Gap</h2>
+    <p class="card-sub">Required rakes minus available (base + spot) capacity, where positive.</p>
+    <div class="chart-container tall" id="chart-gap"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let latestView = null;
+const NOMINAL_SPOT_CAP = 16;
+
+function fmt1(n) { return n.toFixed(1); }
+
+async function fetchView() {
+  const rakeCap = +document.getElementById('s-rake-capacity').value;
+  const buffer = +document.getElementById('s-safety-buffer').value / 100;
+  const r = await fetch(`/api/wagon-requirement?rake_capacity=${rakeCap}&safety_buffer=${buffer}&freq=D`);
+  latestView = await r.json();
+  render();
+}
+
+function render() {
+  if (!latestView) return;
+  const baseFleet = +document.getElementById('s-base-fleet').value;
+  const wagonAvail = +document.getElementById('s-wagon-avail').value / 100;
+  const availableCapacity = baseFleet + NOMINAL_SPOT_CAP * wagonAvail;
+
+  const ts = latestView.timeseries;
+  const s = latestView.summary;
+
+  document.getElementById('wf-cap').textContent = Charts.fmtInt(+document.getElementById('s-rake-capacity').value) + ' t';
+  document.getElementById('wf-req').textContent = fmt1(s.avg) + '/day';
+  document.getElementById('wf-avail').textContent = fmt1(availableCapacity) + '/day';
+  const gap = Math.max(s.avg - availableCapacity, 0);
+  document.getElementById('wf-gap').textContent = fmt1(gap) + '/day';
+  document.getElementById('wf-gap-box').className = gap > 0.5 ? 'flow-step risk' : 'flow-step';
+
+  document.getElementById('peak-rakes').textContent = fmt1(s.peak);
+  document.getElementById('peak-date').textContent = 'on ' + s.peak_date + ' · avg ' + fmt1(s.avg) + '/day';
+
+  Charts.line('chart-req-trend', [
+    { x: ts.dates, y: ts.required_rakes, name: 'Required Rakes/Day', color: Charts.COLORS.series[0], fill: true },
+  ], { layout: { showlegend: false } });
+
+  Charts.line('chart-req-vs-avail', [
+    { x: ts.dates, y: ts.required_rakes, name: 'Required', color: Charts.COLORS.series[0] },
+    { x: [ts.dates[0], ts.dates[ts.dates.length - 1]], y: [baseFleet, baseFleet], name: 'Base Fleet', color: Charts.COLORS.series[1], dash: 'dash' },
+    { x: [ts.dates[0], ts.dates[ts.dates.length - 1]], y: [availableCapacity, availableCapacity], name: 'Base + Spot', color: Charts.COLORS.good, dash: 'dot' },
+  ]);
+
+  const gapSeries = ts.required_rakes.map(v => Math.max(v - availableCapacity, 0));
+  Charts.bar('chart-gap', [
+    { x: ts.dates, y: gapSeries, name: 'Capacity Gap', color: Charts.COLORS.critical },
+  ], { layout: { showlegend: false } });
+}
+
+function wireSlider(id, valId, fmt, onInput) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    val.textContent = fmt(el.value);
+    onInput();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  wireSlider('s-rake-capacity', 'v-rake-capacity', v => Charts.fmtInt(+v) + ' t', fetchView);
+  wireSlider('s-safety-buffer', 'v-safety-buffer', v => v + '%', fetchView);
+  wireSlider('s-base-fleet', 'v-base-fleet', v => (+v).toFixed(1) + ' rakes/day', render);
+  wireSlider('s-wagon-avail', 'v-wagon-avail', v => v + '%', render);
+  fetchView();
+});
+</script>
+{% endblock %}

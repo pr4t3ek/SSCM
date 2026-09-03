@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero-card" id="hero-card">
+  <div class="eyebrow">Recommended Wagon Strategy</div>
+  <div class="split-row">
+    <div class="split base"><div class="num" id="hero-base">&ndash;</div><div class="lbl">Base Fleet</div></div>
+    <div class="split spot"><div class="num" id="hero-spot">&ndash;</div><div class="lbl">Flexible / Spot Fleet</div></div>
+  </div>
+  <div class="model-label" id="hero-label" style="color:#8290b3;"></div>
+</div>
+
+<div class="kpi-row" id="outcome-row"><div class="empty-state">Loading&hellip;</div></div>
+
+<div class="card">
+  <h2>Before vs After</h2>
+  <div class="compare-row" id="compare-row">
+    <div class="empty-state">Loading&hellip;</div>
+  </div>
+</div>
+
+<div class="section-title">Why This Recommendation</div>
+<div class="reason-row" id="reason-row"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function riskLabel(shortageProbPct) {
+  if (shortageProbPct < 10) return 'Low';
+  if (shortageProbPct < 30) return 'Medium';
+  return 'High';
+}
+function arrow(better) { return better ? '<span style="color:#0ca30c;">&darr;</span>' : '<span style="color:#c23434;">&uarr;</span>'; }
+
+async function load() {
+  const overrides = await AssumptionsStore.get();
+  const r = await fetch('/api/optimize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides) });
+  const d = await r.json();
+  const rec = d.recommended_breakdown;
+  const base = d.baseline_all_spot;
+  const spotPct = rec.spot_dependency_pct * 100;
+  const basePct = 100 - spotPct;
+
+  document.getElementById('hero-base').textContent = basePct.toFixed(0) + '%';
+  document.getElementById('hero-spot').textContent = spotPct.toFixed(0) + '%';
+  document.getElementById('hero-label').textContent = d.label + ' (' + rec.B.toFixed(1) + ' rakes/day base fleet)';
+
+  const recRisk = riskLabel((1 - rec.service_level_pct) * 100);
+  document.getElementById('outcome-row').innerHTML = [
+    { label: 'Total Cost', value: Charts.fmtRupee(rec.total_cost) },
+    { label: 'Service Level', value: (rec.service_level_pct * 100).toFixed(1) + '%', cls: 'green' },
+    { label: 'Spot Dependency', value: spotPct.toFixed(0) + '%' },
+    { label: 'Expected Deficit', value: Charts.fmtInt(rec.avg_unmet_tonnes_per_day) + ' t/day', cls: rec.avg_unmet_tonnes_per_day > 0 ? 'amber' : 'green' },
+    { label: 'Risk', value: recRisk, cls: recRisk === 'Low' ? 'green' : recRisk === 'Medium' ? 'amber' : 'red' },
+  ].map(k => `<div class="kpi-card ${k.cls||''}"><div class="label">${k.label}</div><div class="value">${k.value}</div></div>`).join('');
+
+  const baseRisk = riskLabel((1 - base.service_level_pct) * 100);
+  document.getElementById('compare-row').innerHTML = `
+    <div class="compare-col before">
+      <h3>Current / Reference (All-Spot)</h3>
+      <div class="compare-metric"><span>Total Cost</span><b>${Charts.fmtRupee(base.total_cost)}</b></div>
+      <div class="compare-metric"><span>Service Level</span><b>${(base.service_level_pct*100).toFixed(1)}%</b></div>
+      <div class="compare-metric"><span>Spot Dependency</span><b>100%</b></div>
+      <div class="compare-metric"><span>Deficit</span><b>${Charts.fmtInt(base.avg_unmet_tonnes_per_day)} t/day</b></div>
+      <div class="compare-metric"><span>Risk</span><b>${baseRisk}</b></div>
+    </div>
+    <div class="compare-arrow">&rarr;</div>
+    <div class="compare-col after">
+      <h3>Recommended</h3>
+      <div class="compare-metric"><span>Total Cost</span><b>${Charts.fmtRupee(rec.total_cost)} ${arrow(true)}</b></div>
+      <div class="compare-metric"><span>Service Level</span><b>${(rec.service_level_pct*100).toFixed(1)}% ${arrow(false)}</b></div>
+      <div class="compare-metric"><span>Spot Dependency</span><b>${spotPct.toFixed(0)}% ${arrow(true)}</b></div>
+      <div class="compare-metric"><span>Deficit</span><b>${Charts.fmtInt(rec.avg_unmet_tonnes_per_day)} t/day ${arrow(true)}</b></div>
+      <div class="compare-metric"><span>Risk</span><b>${recRisk} ${arrow(true)}</b></div>
+    </div>`;
+
+  document.getElementById('reason-row').innerHTML = `
+    <div class="reason-card"><div class="n">1</div><h4>Cost Efficiency</h4><p>The recommended mix minimizes expected total cost -- saving ${(d.savings_vs_baseline.pct*100).toFixed(0)}% versus an all-spot baseline.</p></div>
+    <div class="reason-card"><div class="n">2</div><h4>Capacity Protection</h4><p>A ${rec.B.toFixed(1)} rakes/day base fleet protects against demand and rake-availability uncertainty, lifting service level to ${(rec.service_level_pct*100).toFixed(1)}%.</p></div>
+    <div class="reason-card"><div class="n">3</div><h4>Flexibility</h4><p>The remaining ${spotPct.toFixed(0)}% spot component absorbs temporary demand spikes without over-committing fixed capacity.</p></div>`;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

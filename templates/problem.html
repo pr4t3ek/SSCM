@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">The core operational problem at Lakhanpur, in one glance -- all figures computed live from the dataset.</p>
+
+<div class="flow-row" id="flow-row">
+  <div class="empty-state">Loading&hellip;</div>
+</div>
+
+<div class="section-title">Why This Matters</div>
+<div class="flow-row">
+  <div class="flow-step"><div class="flow-label">Demand Volatility</div><div class="flow-value" id="wtm-1">&ndash;</div><div class="flow-note">day-to-day swing in demand</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Rake Requirement Volatility</div><div class="flow-value" id="wtm-2">&ndash;</div><div class="flow-note">translates directly into wagon needs</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Procurement Uncertainty</div><div class="flow-value">Spot vs. Base</div><div class="flow-note">how many rakes to commit vs. book spot</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Cost Variability</div><div class="flow-value" id="wtm-4">&ndash;</div><div class="flow-note">demurrage &amp; shortage exposure</div></div>
+</div>
+
+<div class="card" style="margin-top:18px;">
+  <h2>In short</h2>
+  <ul class="insight-list">
+    <li><span class="dot">&#9679;</span><span>Relying solely on spot Indian Railways rake allotments exposes CIL to wagon shortages during demand surges.</span></li>
+    <li><span class="dot">&#9679;</span><span>The same spot-only reliance creates demurrage / overbooking exposure during demand slumps.</span></li>
+    <li><span class="dot">&#9679;</span><span>A mixed captive/leased (GPWIS/SFTO) base fleet plus spot bookings can absorb this volatility at lower expected cost -- the question this dashboard answers.</span></li>
+  </ul>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function stdev(arr) {
+  const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+  const v = arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length;
+  return Math.sqrt(v);
+}
+
+async function load() {
+  const [kR, ddR] = await Promise.all([fetch('/api/kpis'), fetch('/api/demand-dispatch?freq=D')]);
+  const k = await kR.json();
+  const dd = await ddR.json();
+
+  const avgDemandDay = k.total_demand_t / k.n_days;
+  const avgProdDay = k.total_production_t / k.n_days;
+  const avgDispatchDay = k.total_dispatch_t / k.n_days;
+  const avgGapDay = k.total_deficit_t / k.n_days;
+
+  document.getElementById('flow-row').innerHTML = `
+    <div class="flow-step">
+      <div class="flow-label">Demand</div>
+      <div class="flow-value">${Charts.fmtInt(avgDemandDay)}</div>
+      <div class="flow-note">tonnes/day, average</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-label">Production</div>
+      <div class="flow-value">${Charts.fmtInt(avgProdDay)}</div>
+      <div class="flow-note">tonnes/day, average</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-label">Dispatch Capacity</div>
+      <div class="flow-value">${Charts.fmtPct(k.fulfilment_pct)}</div>
+      <div class="flow-note">of demand fulfilled -- rake-constrained</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step risk">
+      <div class="flow-label">Dispatch Gap</div>
+      <div class="flow-value">${Charts.fmtInt(avgGapDay)}</div>
+      <div class="flow-note">tonnes/day unmet, average</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step risk">
+      <div class="flow-label">Business Impact</div>
+      <div class="flow-note" style="text-align:left; margin-top:8px;">
+        &bull; Service risk<br>&bull; Spot procurement dependency<br>&bull; Demurrage exposure<br>&bull; Cost uncertainty
+      </div>
+    </div>`;
+
+  const cv = stdev(dd.demand) / (dd.demand.reduce((a, b) => a + b, 0) / dd.demand.length);
+  document.getElementById('wtm-1').textContent = Charts.fmtPct(cv * 100, 0) + ' CV';
+  document.getElementById('wtm-2').textContent = Charts.fmtPct(cv * 100, 0) + ' CV';
+  document.getElementById('wtm-4').textContent = Charts.fmtPct(k.high_risk_shifts_pct, 0) + ' shifts at risk';
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

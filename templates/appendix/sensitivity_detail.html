@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Finer-grained version of Screen 10 -- larger grid, full tornado and risk tables.</p>
+
+<div class="card">
+  <h2>Optimal Base Fleet % <span class="qmark">fine grid</span></h2>
+  <div class="chart-container tall" id="chart-heatmap"></div>
+</div>
+
+<div class="card">
+  <h2>Sensitivity Grid <span class="qmark">raw values</span></h2>
+  <div class="table-wrap"><table class="data-table" id="grid-table"></table></div>
+</div>
+
+<div class="card">
+  <h2>Tornado -- Full Detail</h2>
+  <div class="table-wrap"><table class="data-table" id="tornado-table"></table></div>
+</div>
+
+<div class="card">
+  <h2>Risk Curve -- Raw Points</h2>
+  <div class="table-wrap"><table class="data-table" id="risk-table"></table></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadHeatmap() {
+  const qs = await AssumptionsStore.toQueryString();
+  const r = await fetch('/api/sensitivity?type=heatmap&detail=true&' + qs);
+  const d = await r.json();
+  Charts.heatmap('chart-heatmap', {
+    z: d.optimal_B_pct,
+    x: d.availability_pct.map(v => (v * 100).toFixed(0) + '%'),
+    y: d.demand_growth_pct.map(v => (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%'),
+  }, { layout: { xaxis: { title: 'Wagon Availability' }, yaxis: { title: 'Demand Growth' }, margin: { l: 70, r: 20, t: 10, b: 50 } } });
+
+  const rows = [];
+  d.demand_growth_pct.forEach((dg, i) => {
+    d.availability_pct.forEach((av, j) => {
+      rows.push(`<tr><td>${(dg*100).toFixed(0)}%</td><td>${(av*100).toFixed(0)}%</td><td>${d.optimal_B_pct[i][j].toFixed(1)}%</td><td>${Charts.fmtRupee(d.min_total_cost[i][j])}</td><td>${(d.service_level_pct[i][j]*100).toFixed(1)}%</td></tr>`);
+    });
+  });
+  document.getElementById('grid-table').innerHTML = `
+    <thead><tr><th>Demand Growth</th><th>Wagon Availability</th><th>Optimal Base %</th><th>Min Total Cost</th><th>Service Level</th></tr></thead>
+    <tbody>${rows.join('')}</tbody>`;
+}
+
+async function loadTornado() {
+  const qs = await AssumptionsStore.toQueryString();
+  const r = await fetch('/api/sensitivity?type=tornado&' + qs);
+  const d = await r.json();
+  document.getElementById('tornado-table').innerHTML = `
+    <thead><tr><th>Assumption</th><th>Low Value</th><th>High Value</th><th>Cost @ Low</th><th>Cost @ High</th><th>Swing</th></tr></thead>
+    <tbody>${d.parameters.map(p => `<tr><td>${p.label}</td><td>${p.low_value}</td><td>${p.high_value}</td><td>${Charts.fmtRupee(p.cost_at_low)}</td><td>${Charts.fmtRupee(p.cost_at_high)}</td><td>${Charts.fmtRupee(p.swing)}</td></tr>`).join('')}</tbody>`;
+}
+
+async function loadRisk() {
+  const qs = await AssumptionsStore.toQueryString();
+  const r = await fetch('/api/sensitivity?type=risk&detail=true&' + qs);
+  const d = await r.json();
+  const rows = d.B_values.map((b, i) => `<tr><td>${b.toFixed(1)}</td><td>${(d.shortage_probability_pct[i]*100).toFixed(1)}%</td><td>${d.expected_unmet_tonnes_per_day[i].toFixed(0)}</td><td>${Charts.fmtRupee(d.expected_cost[i])}</td></tr>`);
+  document.getElementById('risk-table').innerHTML = `
+    <thead><tr><th>Base Fleet (rakes/day)</th><th>Shortage Probability</th><th>Expected Unmet Tonnes/Day</th><th>Expected Cost</th></tr></thead>
+    <tbody>${rows.join('')}</tbody>`;
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadHeatmap(); loadTornado(); loadRisk(); });
+</script>
+{% endblock %}

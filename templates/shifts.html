@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Which shift is creating the greatest operational stress?</p>
+
+<div class="pill-row" id="weakest-shift-banner"></div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Shift Performance</h2>
+    <p class="card-sub">Average production, demand and dispatch by shift.</p>
+    <div class="chart-container tall" id="chart-shift-perf"></div>
+  </div>
+  <div class="card">
+    <h2>Shift Fulfilment</h2>
+    <p class="card-sub">Average dispatch as % of demand, by shift.</p>
+    <div class="chart-container tall" id="chart-shift-fulfil"></div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Shift Deficit Distribution</h2>
+    <p class="card-sub">Spread of per-shift deficit -- box shows median, quartiles and outliers.</p>
+    <div class="chart-container tall" id="chart-shift-box"></div>
+  </div>
+  <div class="card">
+    <h2>Operational Heatmap <span class="qmark">Date &times; Shift</span></h2>
+    <p class="card-sub">Darker = larger shortfall that shift.</p>
+    <div class="chart-container tall" id="chart-shift-heatmap"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const r = await fetch('/api/shift-analysis?detail=true');
+  const d = await r.json();
+
+  const shiftNames = d.shifts.map(s => s.shift_label);
+  Charts.bar('chart-shift-perf', [
+    { x: shiftNames, y: d.shifts.map(s => s.avg_production), name: 'Production', color: Charts.COLORS.series[0] },
+    { x: shiftNames, y: d.shifts.map(s => s.avg_demand), name: 'Demand', color: Charts.COLORS.series[1] },
+    { x: shiftNames, y: d.shifts.map(s => s.avg_dispatch), name: 'Dispatch', color: Charts.COLORS.series[2] },
+  ]);
+
+  Charts.bar('chart-shift-fulfil', [
+    { x: shiftNames, y: d.shifts.map(s => s.fulfilment_pct), name: 'Fulfilment %',
+      color: shiftNames.map((_, i) => Charts.COLORS.series[0]) },
+  ], { layout: { showlegend: false, yaxis: { ticksuffix: '%' } } });
+
+  Charts.box('chart-shift-box', shiftNames.map((name, i) => ({
+    name, y: d.distribution[name], color: Charts.COLORS.series[i % 3],
+  })));
+
+  const h = d.heatmap;
+  const z = h.shift_labels.map((_, si) => h.dates.map((_, di) => h.values[di][si]));
+  Charts.heatmap('chart-shift-heatmap', { z, x: h.dates, y: h.shift_labels }, { layout: { margin: { l: 70, r: 20, t: 10, b: 40 } } });
+
+  const w = d.weakest_shift;
+  document.getElementById('weakest-shift-banner').innerHTML =
+    `<span class="badge red">Weakest: ${w.shift_label} shift &middot; ${w.fulfilment_pct.toFixed(1)}% fulfilment &middot; ${w.share_of_total_deficit_pct.toFixed(0)}% of total deficit</span>`;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

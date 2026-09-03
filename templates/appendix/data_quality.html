@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Every data-quality finding is computed generically from the raw workbook -- nothing here is hardcoded to a specific row or date.</p>
+
+<div class="kpi-row" id="dq-kpi-row"><div class="empty-state">Loading&hellip;</div></div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Missing Date Rows</h2>
+    <div class="table-wrap"><table class="data-table" id="missing-table"></table></div>
+  </div>
+  <div class="card">
+    <h2>Incomplete Days <span class="qmark">&lt; 3 shifts recorded</span></h2>
+    <div class="table-wrap"><table class="data-table" id="incomplete-table"></table></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Deficit Outliers <span class="qmark">outside 1.5&times; IQR</span></h2>
+  <p class="card-sub" id="outlier-bounds"></p>
+  <div class="table-wrap"><table class="data-table" id="outlier-table"></table></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const r = await fetch('/api/data-quality');
+  const d = await r.json();
+
+  document.getElementById('dq-kpi-row').innerHTML = [
+    { label: 'Total Rows', value: d.total_rows },
+    { label: 'Dated Rows', value: d.dated_rows },
+    { label: 'Unique Dates', value: d.unique_dates },
+    { label: 'Date Coverage', value: d.date_range.start + ' &rarr; ' + d.date_range.end },
+    { label: 'Missing Date Rows', value: d.missing_date_rows.length, cls: d.missing_date_rows.length ? 'amber' : 'green' },
+    { label: 'Incomplete Days', value: d.incomplete_days.length, cls: d.incomplete_days.length ? 'amber' : 'green' },
+    { label: 'Duplicate Rows', value: d.duplicate_row_count, cls: d.duplicate_row_count ? 'red' : 'green' },
+    { label: 'Deficit Outliers', value: d.outliers.count, cls: 'amber' },
+  ].map(k => `<div class="kpi-card ${k.cls||''}"><div class="label">${k.label}</div><div class="value">${k.value}</div></div>`).join('');
+
+  document.getElementById('missing-table').innerHTML = d.missing_date_rows.length ? `
+    <thead><tr><th>Row #</th><th>Shift</th><th>Demand (t)</th><th>Likely Context</th></tr></thead>
+    <tbody>${d.missing_date_rows.map(row => `<tr><td>${row.row_index}</td><td>${row.shift_timing}</td><td>${Charts.fmtInt(row.coal_demanded_t)}</td><td>${row.likely_context ? `Follows ${row.likely_context.previous_row_date}, Shift ${row.likely_context.previous_row_shift_number}` : 'No adjacent context'}</td></tr>`).join('')}</tbody>`
+    : '<tbody><tr><td class="empty-state">None found.</td></tr></tbody>';
+
+  document.getElementById('incomplete-table').innerHTML = d.incomplete_days.length ? `
+    <thead><tr><th>Date</th><th>Shifts Present</th><th>Missing Shift #</th></tr></thead>
+    <tbody>${d.incomplete_days.map(row => `<tr><td>${row.date}</td><td>${row.present_shifts.join(', ')}</td><td>${row.missing_shift_numbers.join(', ')}</td></tr>`).join('')}</tbody>`
+    : '<tbody><tr><td class="empty-state">None found.</td></tr></tbody>';
+
+  document.getElementById('outlier-bounds').textContent = `Normal range: ${d.outliers.lower_bound.toFixed(0)} to ${d.outliers.upper_bound.toFixed(0)} t deficit.`;
+  document.getElementById('outlier-table').innerHTML = `
+    <thead><tr><th>Date</th><th>Shift</th><th>Deficit (t)</th></tr></thead>
+    <tbody>${d.outliers.rows.map(row => `<tr><td>${row.date}</td><td>${row.shift_label}</td><td>${Charts.fmtInt(row.deficit_t)}</td></tr>`).join('')}</tbody>`;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

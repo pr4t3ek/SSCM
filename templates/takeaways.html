@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">The consulting-style close: what we found, what we built, and what CIL should do next.</p>
+
+<div class="grid-3" style="margin-bottom:20px;">
+  <div class="takeaway-card">
+    <h3>What We Observed</h3>
+    <p id="observed-text">Demand and dispatch exhibit significant shift-level variability, creating persistent periods of unmet demand at Lakhanpur OCP.</p>
+  </div>
+  <div class="takeaway-card">
+    <h3>What We Optimized</h3>
+    <p>Fleet mix (Base vs. Spot rakes) was optimized against expected total cost, service level and procurement risk, using an exact convex-optimization engine over the observed daily requirement.</p>
+  </div>
+  <div class="takeaway-card">
+    <h3>What We Recommend</h3>
+    <p id="recommend-text">Adopt the model-recommended Base + Flexible fleet structure, with periodic recalibration as demand and railway availability change.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Management Action Plan</h2>
+  <ol class="action-plan">
+    <li><span class="n">1</span><span>Secure Base Fleet capacity for predictable, recurring demand.</span></li>
+    <li><span class="n">2</span><span>Retain Spot Fleet bookings as a peak-demand buffer.</span></li>
+    <li><span class="n">3</span><span>Monitor demand and dispatch weekly against the dashboard's KPIs.</span></li>
+    <li><span class="n">4</span><span>Re-optimize the contracting mix whenever demand or railway availability changes materially.</span></li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const overrides = await AssumptionsStore.get();
+  const [kR, optR] = await Promise.all([
+    fetch('/api/kpis'),
+    fetch('/api/optimize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides) }),
+  ]);
+  const k = await kR.json();
+  const d = await optR.json();
+  const rec = d.recommended_breakdown;
+  const spotPct = rec.spot_dependency_pct * 100;
+
+  document.getElementById('observed-text').textContent =
+    `Demand exceeded dispatch in ${k.pct_shifts_positive_deficit.toFixed(0)}% of observed shifts, averaging a ${Charts.fmtInt(k.avg_deficit_per_shift_t)}-tonne shortfall per shift -- persistent, not occasional.`;
+
+  document.getElementById('recommend-text').textContent =
+    `Adopt a ${(100 - spotPct).toFixed(0)}% Base / ${spotPct.toFixed(0)}% Spot fleet structure (saving ${(d.savings_vs_baseline.pct * 100).toFixed(0)}% vs. an all-spot baseline), with periodic recalibration as demand and railway availability change.`;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Every parameter behind the cost/optimization model, editable here. Changes are saved to this browser and apply on the Cost Optimization, Scenario and Sensitivity screens (the What-If Simulator uses its own sliders and does not read from here).</p>
+
+<div class="pill-row">
+  <span class="badge provenance-observed">Observed</span> <span style="font-size:11.5px;color:var(--ink-secondary);">computed from the dataset</span>
+  <span class="badge provenance-external" style="margin-left:14px;">External</span> <span style="font-size:11.5px;color:var(--ink-secondary);">a real figure from the project proposal</span>
+  <span class="badge provenance-assumption" style="margin-left:14px;">Assumption</span> <span style="font-size:11.5px;color:var(--ink-secondary);">illustrative, user-editable -- not an official CIL/IR tariff</span>
+</div>
+
+<div class="card">
+  <h2>Parameters</h2>
+  <div id="param-rows"></div>
+  <div style="margin-top:16px; display:flex; gap:8px;">
+    <button class="btn primary" id="save-params">Save</button>
+    <button class="btn" id="reset-params">Reset to Defaults</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const defaults = await AssumptionsStore.defaultsCatalog();
+  const current = await AssumptionsStore.get();
+
+  document.getElementById('param-rows').innerHTML = defaults.map(p => `
+    <div class="assumption-row">
+      <div>
+        <div class="name">${p.label}</div>
+        <span class="badge provenance-${p.provenance.toLowerCase()}">${p.provenance}</span>
+      </div>
+      <div><input type="number" data-key="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${current[p.key]}"></div>
+      <div class="desc">${p.description}</div>
+      <div class="desc">${p.unit} &middot; range ${p.min}&ndash;${p.max}</div>
+    </div>`).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  load();
+  document.getElementById('save-params').addEventListener('click', async () => {
+    const updates = {};
+    document.querySelectorAll('#param-rows input').forEach(inp => { updates[inp.dataset.key] = +inp.value; });
+    await AssumptionsStore.set(updates);
+    alert('Assumptions saved to this browser.');
+  });
+  document.getElementById('reset-params').addEventListener('click', async () => {
+    await AssumptionsStore.reset();
+    load();
+  });
+});
+</script>
+{% endblock %}

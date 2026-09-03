@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">The central operations-research question: how many rakes should CIL commit as a base fleet to minimize expected total logistics cost?</p>
+
+<div class="kpi-row" id="kpi-row"><div class="empty-state">Loading&hellip;</div></div>
+
+<div class="card">
+  <h2>Base Fleet Capacity vs Total Cost</h2>
+  <p class="card-sub">The marked point is where expected total cost is minimized.</p>
+  <div class="chart-container tall" id="chart-curve"></div>
+  <p class="model-label" id="model-label-1"></p>
+</div>
+
+<div class="card">
+  <h2>Cost Breakdown at the Recommended Base Fleet</h2>
+  <p class="card-sub">How the total cost is composed: fixed base-fleet commitment, spot bookings, demurrage on idle base capacity, and shortage penalties.</p>
+  <div class="chart-container tall" id="chart-waterfall"></div>
+  <p class="model-label" id="model-label-2"></p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const overrides = await AssumptionsStore.get();
+  const r = await fetch('/api/optimize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides) });
+  const d = await r.json();
+  const c = d.cost_curve;
+  const rec = d.recommended_breakdown;
+  const spotPct = rec.spot_dependency_pct * 100;
+
+  document.getElementById('kpi-row').innerHTML = [
+    { label: 'Recommended Base Fleet', value: rec.B.toFixed(1) + ' rakes/day' },
+    { label: 'Recommended Base %', value: (100 - spotPct).toFixed(0) + '%' },
+    { label: 'Recommended Spot %', value: spotPct.toFixed(0) + '%' },
+    { label: 'Expected Service Level', value: (rec.service_level_pct * 100).toFixed(1) + '%' },
+    { label: 'Expected Total Cost', value: Charts.fmtRupee(rec.total_cost) },
+  ].map(k => `<div class="kpi-card"><div class="label">${k.label}</div><div class="value">${k.value}</div></div>`).join('');
+
+  Charts.line('chart-curve', [
+    { x: c.B, y: c.total_cost, name: 'Total Cost', color: Charts.COLORS.series[0] },
+  ], {
+    layout: {
+      xaxis: { title: 'Base Fleet Capacity (rakes/day)' },
+      yaxis: { title: 'Total Cost (Rs)' },
+      showlegend: false,
+      shapes: [{ type: 'line', x0: d.cost_optimal_B, x1: d.cost_optimal_B, y0: 0, y1: Math.max(...c.total_cost), line: { color: Charts.COLORS.critical, width: 1.5, dash: 'dot' } }],
+      annotations: [{ x: d.cost_optimal_B, y: d.cost_optimal_breakdown.total_cost, text: 'Optimal: ' + d.cost_optimal_B.toFixed(1) + ' rakes/day', showarrow: true, arrowhead: 2, ax: 40, ay: -40, font: { size: 11, color: Charts.COLORS.critical } }],
+    }
+  });
+
+  Charts.waterfall('chart-waterfall', [
+    { label: 'Base Fleet Cost', value: rec.base_fleet_cost, measure: 'relative' },
+    { label: 'Spot Cost', value: rec.spot_cost, measure: 'relative' },
+    { label: 'Demurrage', value: rec.demurrage_cost, measure: 'relative' },
+    { label: 'Shortage Penalty', value: rec.shortage_cost, measure: 'relative' },
+    { label: 'Total Cost', value: rec.total_cost, measure: 'total' },
+  ], { fmt: Charts.fmtRupee });
+
+  document.getElementById('model-label-1').textContent = d.label;
+  document.getElementById('model-label-2').textContent = d.label;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

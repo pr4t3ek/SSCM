@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">The complete cost equation behind every screen that shows a cost figure.</p>
+
+<div class="card">
+  <h2>The Equation</h2>
+  <div style="font-family: ui-monospace, monospace; font-size:13px; background:#f6f7f9; border-radius:8px; padding:16px; line-height:2;">
+    Spot(t) &nbsp;= max( Required(t) &minus; B , 0 )<br>
+    Idle(t) &nbsp;&nbsp;= max( B &minus; Required(t) , 0 )<br>
+    Shortfall(t) = max( Spot(t) &minus; SpotCap , 0 )<br>
+    UnmetTonnes(t) = Shortfall(t) &times; RakeCapacity<br><br>
+    <b>Total(B)</b> = N&times;B&times;BaseCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Base Fleet Cost</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; Spot(t)&times;SpotCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Spot Cost</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; Idle(t)&times;DemurrageCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Demurrage</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ &Sigma; UnmetTonnes(t)&times;ShortageCost&nbsp;&nbsp;<span class="badge provenance-assumption" style="vertical-align:middle;">Shortage Penalty</span>
+  </div>
+  <p class="card-sub" style="margin-top:14px;">
+    Demurrage is charged on <b>idle base-fleet capacity</b> -- an overcommitted captive/leased fleet sitting unused on a
+    low-demand day -- mirroring the project proposal's own framing ("demurrage / overbooking charges during slumps"),
+    rather than a generic siding-delay fee. This is a modeling choice, stated here rather than presented as an unquestioned fact.
+    Min-service-level and the spot-availability cap are <b>soft targets</b> reported alongside the cost-optimal point, not hard
+    constraints baked into the objective.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Cost Breakdown at the Recommended Base Fleet</h2>
+  <div class="chart-container tall" id="chart-waterfall"></div>
+  <p class="model-label" id="model-label"></p>
+</div>
+
+<div class="card">
+  <h2>Current Parameter Values</h2>
+  <div class="table-wrap"><table class="data-table" id="param-table"></table></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const overrides = await AssumptionsStore.get();
+  const [optR, defR] = await Promise.all([
+    fetch('/api/optimize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides) }),
+    AssumptionsStore.defaultsCatalog(),
+  ]);
+  const d = await optR.json();
+  const rec = d.recommended_breakdown;
+
+  Charts.waterfall('chart-waterfall', [
+    { label: 'Base Fleet Cost', value: rec.base_fleet_cost },
+    { label: 'Spot Cost', value: rec.spot_cost },
+    { label: 'Demurrage', value: rec.demurrage_cost },
+    { label: 'Shortage Penalty', value: rec.shortage_cost },
+    { label: 'Total Cost', value: rec.total_cost, measure: 'total' },
+  ], { fmt: Charts.fmtRupee });
+  document.getElementById('model-label').textContent = d.label;
+
+  document.getElementById('param-table').innerHTML = `
+    <thead><tr><th>Parameter</th><th>Provenance</th><th>Current Value</th><th>Unit</th></tr></thead>
+    <tbody>${defR.map(p => `<tr><td>${p.label}</td><td><span class="badge provenance-${p.provenance.toLowerCase()}">${p.provenance}</span></td><td>${overrides[p.key]}</td><td>${p.unit}</td></tr>`).join('')}</tbody>`;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">How the optimization engine actually finds the recommended Base Fleet Capacity.</p>
+
+<div class="flow-row" style="margin-bottom:18px;">
+  <div class="flow-step"><div class="flow-label">Decision Variable</div><div class="flow-value" style="font-size:14px;">B = Base Fleet<br>(rakes/day)</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Objective Function</div><div class="flow-value" style="font-size:14px;">Minimize<br>Total(B)</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Constraints</div><div class="flow-value" style="font-size:14px;">Service level &amp;<br>spot cap (soft)</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Algorithm</div><div class="flow-value" style="font-size:14px;">Exact breakpoint<br>search</div></div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step"><div class="flow-label">Optimal Fleet Mix</div><div class="flow-value" id="opt-mix" style="font-size:14px;">&ndash;</div></div>
+</div>
+
+<div class="card">
+  <h2>Why Breakpoint Search, Not a General Solver</h2>
+  <p class="card-sub" style="font-size:13px; line-height:1.7;">
+    Total(B) is a finite sum of <code>max(linear, 0)</code> hinge terms plus a linear term in B, so it is
+    <b>convex and piecewise-linear</b>. A convex piecewise-linear function's minimum over a continuum is always
+    attained at one of its <b>breakpoints</b> -- the sorted union of every day's Required(t) and Required(t) &minus; SpotCap.
+    Enumerating those breakpoints and evaluating cost at each is <b>exact</b> (not an approximation like a grid search),
+    and fast: O(N) candidate points &times; O(N) vectorized cost evaluation for N &asymp; 300&ndash;365 days -- well under the
+    latency budget needed for the What-If Simulator to recompute on every slider drag. SciPy's
+    <code>minimize_scalar(bounded=True)</code> is used only as a development-time cross-check against this result,
+    never in the live request path. OR-Tools was not used: there is no combinatorial or integer structure here that
+    would justify it -- this is a 1-D convex problem.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Breakpoints on the Cost Curve</h2>
+  <p class="card-sub">Every marker is an exactly-evaluated candidate; the curve's minimum among them is the recommendation.</p>
+  <div class="chart-container tall" id="chart-breakpoints"></div>
+  <p class="model-label" id="model-label"></p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const overrides = await AssumptionsStore.get();
+  const r = await fetch('/api/optimize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides) });
+  const d = await r.json();
+  const c = d.cost_curve;
+  const bp = d.candidate_breakpoints;
+
+  document.getElementById('opt-mix').textContent = d.recommended_B.toFixed(1) + ' rakes/day';
+
+  Charts.line('chart-breakpoints', [
+    { x: c.B, y: c.total_cost, name: 'Total Cost (continuum)', color: Charts.COLORS.inkMuted },
+  ], { layout: { showlegend: true, xaxis: { title: 'Base Fleet Capacity (rakes/day)' }, yaxis: { title: 'Total Cost (Rs)' } } });
+
+  Plotly.addTraces('chart-breakpoints', [{
+    x: bp.rows.map(r => r.B), y: bp.rows.map(r => r.total_cost),
+    mode: 'markers', type: 'scatter', name: `Breakpoints (${bp.count})`,
+    marker: { size: 6, color: Charts.COLORS.series[1] },
+  }]);
+
+  document.getElementById('model-label').textContent = d.label;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}
