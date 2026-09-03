@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Full raw output of the optimization engine, by fleet configuration and by scenario.</p>
+
+<div class="card">
+  <h2>Fleet Configurations</h2>
+  <div class="table-wrap"><table class="data-table" id="config-table"></table></div>
+  <p class="model-label" id="model-label-1"></p>
+</div>
+
+<div class="card">
+  <h2>Scenario Configurations</h2>
+  <div class="table-wrap"><table class="data-table" id="scenario-table"></table></div>
+</div>
+
+<div class="card">
+  <h2>Breakpoints Evaluated <span class="qmark" id="bp-count"></span></h2>
+  <div class="table-wrap"><table class="data-table" id="breakpoint-table"></table></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function row(name, b) {
+  return `<tr><td>${name}</td><td>${b.B.toFixed(2)}</td><td>${Charts.fmtRupee(b.base_fleet_cost)}</td><td>${Charts.fmtRupee(b.spot_cost)}</td><td>${Charts.fmtRupee(b.demurrage_cost)}</td><td>${Charts.fmtRupee(b.shortage_cost)}</td><td>${Charts.fmtRupee(b.total_cost)}</td><td>${(b.service_level_pct*100).toFixed(1)}%</td><td>${(b.spot_dependency_pct*100).toFixed(0)}%</td></tr>`;
+}
+
+async function load() {
+  const overrides = await AssumptionsStore.get();
+  const [optR, scnR] = await Promise.all([
+    fetch('/api/optimize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides) }),
+    fetch('/api/scenarios?' + await AssumptionsStore.toQueryString()),
+  ]);
+  const d = await optR.json();
+  const scn = await scnR.json();
+
+  document.getElementById('config-table').innerHTML = `
+    <thead><tr><th>Configuration</th><th>B (rakes/day)</th><th>Base Cost</th><th>Spot Cost</th><th>Demurrage</th><th>Shortage</th><th>Total Cost</th><th>Service Level</th><th>Spot Dependency</th></tr></thead>
+    <tbody>
+      ${row('Baseline (All-Spot)', d.baseline_all_spot)}
+      ${row('Cost-Optimal', d.cost_optimal_breakdown)}
+      ${row('Service-Level-Optimal', d.service_level_optimal_breakdown)}
+      <tr class="highlight">${row('Recommended', d.recommended_breakdown).replace('<tr>', '')}
+    </tbody>`;
+  document.getElementById('model-label-1').textContent = d.label + (d.feasibility_warning ? ' -- ' + d.feasibility_warning : '');
+
+  document.getElementById('scenario-table').innerHTML = `
+    <thead><tr><th>Scenario</th><th>B (rakes/day)</th><th>Total Cost</th><th>Service Level</th><th>Spot Dependency</th><th>Fleet Utilization</th></tr></thead>
+    <tbody>${scn.scenarios.map(s => `<tr class="${s.key===scn.recommended_key?'highlight':''}"><td>${s.name}</td><td>${s.B_rakes.toFixed(2)}</td><td>${Charts.fmtRupee(s.total_cost)}</td><td>${(s.service_level_pct*100).toFixed(1)}%</td><td>${(s.spot_dependency_pct*100).toFixed(0)}%</td><td>${s.fleet_utilization_pct.toFixed(0)}%</td></tr>`).join('')}</tbody>`;
+
+  const bp = d.candidate_breakpoints;
+  document.getElementById('bp-count').textContent = `${bp.count} total`;
+  document.getElementById('breakpoint-table').innerHTML = `
+    <thead><tr><th>B (rakes/day)</th><th>Total Cost</th><th>Service Level</th></tr></thead>
+    <tbody>${bp.rows.slice(0, 60).map(r => `<tr><td>${r.B.toFixed(2)}</td><td>${Charts.fmtRupee(r.total_cost)}</td><td>${(r.service_level_pct*100).toFixed(1)}%</td></tr>`).join('')}</tbody>`;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

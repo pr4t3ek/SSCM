@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block filter_bar %}
+<div class="filter-bar">
+  <div><label>Mine</label><input type="text" value="Lakhanpur OCP" disabled style="width:120px;"></div>
+  <div><label>Shift</label>
+    <select id="f-shift"><option value="">All</option><option value="1">Morning</option><option value="2">Evening</option><option value="3">Night</option></select>
+  </div>
+  <div><label>From</label><input type="date" id="f-date-from"></div>
+  <div><label>To</label><input type="date" id="f-date-to"></div>
+  <div><label>Min Demand</label><input type="number" id="f-min-demand" style="width:90px;" placeholder="t"></div>
+  <div><label>Min Production</label><input type="number" id="f-min-production" style="width:90px;" placeholder="t"></div>
+  <div><label>Min Dispatch</label><input type="number" id="f-min-dispatch" style="width:90px;" placeholder="t"></div>
+  <div><label>Min Deficit</label><input type="number" id="f-min-deficit" style="width:90px;" placeholder="t"></div>
+  <button class="btn primary" id="apply-filters">Apply</button>
+  <button class="btn" id="clear-filters">Clear</button>
+</div>
+{% endblock %}
+{% block content %}
+<p class="screen-caption">Full shift-wise dataset (908 rows). Rows with a missing date are shown as &ldquo;&ndash;&rdquo; and remain visible rather than being silently dropped.</p>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table" id="explorer-table"></table>
+  </div>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+    <span id="page-info" style="font-size:12px; color:var(--ink-muted);"></span>
+    <div>
+      <button class="btn" id="prev-page">&larr; Prev</button>
+      <button class="btn" id="next-page">Next &rarr;</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let page = 1;
+const pageSize = 25;
+
+function buildQuery() {
+  const params = new URLSearchParams({ page, page_size: pageSize });
+  const shift = document.getElementById('f-shift').value;
+  if (shift) params.set('shift_number', shift);
+  const dateFrom = document.getElementById('f-date-from').value;
+  if (dateFrom) params.set('date_from', dateFrom);
+  const dateTo = document.getElementById('f-date-to').value;
+  if (dateTo) params.set('date_to', dateTo);
+  ['demand', 'production', 'dispatch', 'deficit'].forEach(f => {
+    const v = document.getElementById('f-min-' + f).value;
+    if (v) params.set('min_' + f, v);
+  });
+  return params.toString();
+}
+
+async function load() {
+  const r = await fetch('/api/data-explorer?' + buildQuery());
+  const d = await r.json();
+  const rows = d.rows.map(row => `
+    <tr>
+      <td>${row.date || '<span style="color:var(--status-critical);">missing</span>'}</td>
+      <td>${row.shift_number}</td>
+      <td>${row.shift_timing}</td>
+      <td>${Charts.fmtInt(row.coal_produced_t)}</td>
+      <td>${Charts.fmtInt(row.coal_dispatched_t)}</td>
+      <td>${Charts.fmtInt(row.coal_demanded_t)}</td>
+      <td>${Charts.fmtInt(row.deficit_t)}</td>
+      <td>${row.fulfilment_pct !== null ? row.fulfilment_pct.toFixed(1) + '%' : '--'}</td>
+    </tr>`).join('');
+  document.getElementById('explorer-table').innerHTML = `
+    <thead><tr><th>Date</th><th>Shift #</th><th>Shift Timing</th><th>Produced (t)</th><th>Dispatched (t)</th><th>Demanded (t)</th><th>Deficit (t)</th><th>Fulfilment</th></tr></thead>
+    <tbody>${rows}</tbody>`;
+  const totalPages = Math.max(Math.ceil(d.total_rows / pageSize), 1);
+  document.getElementById('page-info').textContent = `Page ${page} of ${totalPages} · ${d.total_rows} rows`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  load();
+  document.getElementById('apply-filters').addEventListener('click', () => { page = 1; load(); });
+  document.getElementById('clear-filters').addEventListener('click', () => {
+    document.querySelectorAll('.filter-bar input').forEach(i => i.value = '');
+    document.getElementById('f-shift').value = '';
+    page = 1; load();
+  });
+  document.getElementById('prev-page').addEventListener('click', () => { if (page > 1) { page--; load(); } });
+  document.getElementById('next-page').addEventListener('click', () => { page++; load(); });
+});
+</script>
+{% endblock %}

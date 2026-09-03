@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">A control-tower view of coal production, demand and dispatch at Lakhanpur OCP -- every figure below is computed live from the shift-wise dataset (908 shifts, 303 days), never hard-coded.</p>
+
+<div class="kpi-row" id="kpi-row">
+  <div class="empty-state">Loading KPIs&hellip;</div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Production vs Demand vs Dispatch</h2>
+    <p class="card-sub">Coal tonnes over time, at your chosen aggregation.</p>
+    <div class="seg" id="freq-toggle" style="margin-bottom:10px;">
+      <button data-freq="D" class="active">Daily</button>
+      <button data-freq="W">Weekly</button>
+      <button data-freq="M">Monthly</button>
+    </div>
+    <div class="chart-container tall" id="chart-main"></div>
+  </div>
+  <div class="card">
+    <h2>Dispatch Fulfilment Trend</h2>
+    <p class="card-sub">Dispatch as a % of demand -- how efficiently requirement is being met.</p>
+    <div class="chart-container tall" id="chart-fulfilment"></div>
+  </div>
+</div>
+
+<div class="section-title">Executive Insights</div>
+<ul class="insight-list" id="insight-list">
+  <li>Loading insights&hellip;</li>
+</ul>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadKPIs() {
+  const r = await fetch('/api/kpis');
+  const k = await r.json();
+  const row = document.getElementById('kpi-row');
+  const cards = [
+    { label: 'Total Production', value: Charts.fmtInt(k.total_production_t) + ' t', cls: '' },
+    { label: 'Total Demand', value: Charts.fmtInt(k.total_demand_t) + ' t', cls: '' },
+    { label: 'Total Dispatch', value: Charts.fmtInt(k.total_dispatch_t) + ' t', cls: '' },
+    { label: 'Dispatch Deficit', value: Charts.fmtInt(k.total_deficit_t) + ' t', cls: 'red' },
+    { label: 'Demand Fulfilment', value: Charts.fmtPct(k.fulfilment_pct), cls: k.fulfilment_status },
+    { label: 'Peak Deficit (1 shift)', value: Charts.fmtInt(k.peak_deficit_t) + ' t', cls: 'amber' },
+    { label: 'High-Risk Shifts', value: k.high_risk_shifts + ' (' + Charts.fmtPct(k.high_risk_shifts_pct, 0) + ')', cls: 'red' },
+  ];
+  row.innerHTML = cards.map(c => `
+    <div class="kpi-card ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+    </div>`).join('');
+}
+
+async function loadMainChart(freq) {
+  const r = await fetch('/api/demand-dispatch?freq=' + freq);
+  const d = await r.json();
+  Charts.line('chart-main', [
+    { x: d.dates, y: d.production, name: 'Production', color: Charts.COLORS.series[0] },
+    { x: d.dates, y: d.demand, name: 'Demand', color: Charts.COLORS.series[1] },
+    { x: d.dates, y: d.dispatch, name: 'Dispatch', color: Charts.COLORS.series[2] },
+  ]);
+  Charts.line('chart-fulfilment', [
+    { x: d.dates, y: d.fulfilment_pct, name: 'Fulfilment %', color: Charts.COLORS.series[0], fill: true },
+  ], { layout: { yaxis: { ticksuffix: '%' } } });
+}
+
+async function loadInsights() {
+  const r = await fetch('/api/insights?screen=executive_summary');
+  const d = await r.json();
+  const list = document.getElementById('insight-list');
+  list.innerHTML = d.insights.map(i => `<li class="${i.startsWith('Data quality') ? 'caveat' : ''}"><span class="dot">&#9679;</span><span>${i}</span></li>`).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadKPIs();
+  loadMainChart('D');
+  loadInsights();
+
+  document.getElementById('freq-toggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    document.querySelectorAll('#freq-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadMainChart(btn.dataset.freq);
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Three preconfigured fleet strategies, compared on cost, service and risk.</p>
+
+<div class="card">
+  <h2>Scenario Comparison</h2>
+  <div class="table-wrap">
+    <table class="data-table" id="scenario-table"></table>
+  </div>
+  <p class="model-label" id="model-label"></p>
+</div>
+
+<div class="card">
+  <h2>Normalized Comparison <span class="qmark">higher = better on every axis</span></h2>
+  <div class="chart-container tall" id="chart-radar"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function normalize(arr) {
+  const min = Math.min(...arr), max = Math.max(...arr);
+  if (max === min) return arr.map(() => 50);
+  return arr.map(v => (v - min) / (max - min) * 100);
+}
+
+async function load() {
+  const qs = await AssumptionsStore.toQueryString();
+  const r = await fetch('/api/scenarios?' + qs);
+  const d = await r.json();
+  const scenarios = d.scenarios;
+
+  const rows = scenarios.map(s => `
+    <tr class="${s.key === d.recommended_key ? 'highlight' : ''}">
+      <td>${s.name}${s.key === d.recommended_key ? ' <span class="badge green">Recommended</span>' : ''}</td>
+      <td>${Charts.fmtRupee(s.total_cost)}</td>
+      <td>${(s.service_level_pct * 100).toFixed(1)}%</td>
+      <td>${(s.spot_dependency_pct * 100).toFixed(0)}%</td>
+      <td>${((1 - s.service_level_pct) * 100).toFixed(0)}%</td>
+      <td>${s.fleet_utilization_pct.toFixed(0)}%</td>
+    </tr>`).join('');
+  document.getElementById('scenario-table').innerHTML = `
+    <thead><tr><th>Scenario</th><th>Total Cost</th><th>Service Level</th><th>Spot Dependency</th><th>Shortage Risk</th><th>Fleet Utilization</th></tr></thead>
+    <tbody>${rows}</tbody>`;
+
+  const costs = scenarios.map(s => s.total_cost);
+  const risks = scenarios.map(s => (1 - s.service_level_pct) * 100);
+  const costEff = normalize(costs).map(v => 100 - v);
+  const lowRisk = normalize(risks).map(v => 100 - v);
+
+  const categories = ['Cost Efficiency', 'Low Risk', 'Flexibility', 'Service Level', 'Fleet Utilization'];
+  const series = scenarios.map((s, i) => ({
+    name: s.name,
+    emphasize: s.key === d.recommended_key,
+    color: s.key === 'spot_heavy' ? Charts.COLORS.series[1] : s.key === 'base_heavy' ? Charts.COLORS.series[6] : Charts.COLORS.series[0],
+    values: [costEff[i], lowRisk[i], s.spot_dependency_pct * 100, s.service_level_pct * 100, s.fleet_utilization_pct],
+  }));
+  Charts.radar('chart-radar', series, categories);
+
+  document.getElementById('model-label').textContent = 'Model-based result using configured assumptions.';
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

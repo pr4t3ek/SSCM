@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="margin:0 0 2px; font-size:16px;">Wagon Strategy Simulator</h2>
+<p class="screen-caption">What happens if demand, wagon availability or procurement costs change? Drag a control -- every KPI and chart below recomputes live.</p>
+
+<div class="simulator-layout">
+  <div class="card">
+    <h2>Controls</h2>
+    <div class="control-group">
+      <label>Demand Growth <span class="val" id="v-demand-growth">+0%</span></label>
+      <input type="range" id="s-demand-growth" min="-10" max="30" step="1" value="0">
+      <div class="range-min-max"><span>-10%</span><span>+30%</span></div>
+    </div>
+    <div class="control-group">
+      <label>Wagon Availability <span class="val" id="v-wagon-avail">100%</span></label>
+      <input type="range" id="s-wagon-avail" min="70" max="100" step="1" value="100">
+      <div class="range-min-max"><span>70%</span><span>100%</span></div>
+    </div>
+    <div class="control-group">
+      <label>Base Fleet Capacity <span class="val" id="v-base-fleet">17.0 rakes/day</span></label>
+      <input type="range" id="s-base-fleet" min="0" max="35" step="0.5" value="17">
+      <div class="range-min-max"><span>0</span><span>35 rakes/day</span></div>
+    </div>
+    <div class="control-group">
+      <label>Spot Rake Cost <span class="val" id="v-spot-cost">₹15,000</span></label>
+      <input type="range" id="s-spot-cost" min="5000" max="40000" step="500" value="15000">
+      <div class="range-min-max"><span>₹5,000</span><span>₹40,000</span></div>
+    </div>
+    <div class="control-group">
+      <label>Service Level Target <span class="val" id="v-service-target">95%</span></label>
+      <input type="range" id="s-service-target" min="90" max="99" step="1" value="95">
+      <div class="range-min-max"><span>90%</span><span>99%</span></div>
+    </div>
+    <div class="control-group">
+      <label>Demurrage Cost <span class="val" id="v-demurrage">₹6,000</span></label>
+      <input type="range" id="s-demurrage" min="1000" max="20000" step="500" value="6000">
+      <div class="range-min-max"><span>₹1,000</span><span>₹20,000</span></div>
+    </div>
+    <p class="model-label sim-model-label"></p>
+  </div>
+
+  <div>
+    <div class="sim-kpi-row" id="sim-kpi-row"><div class="empty-state">Loading&hellip;</div></div>
+
+    <div class="card">
+      <h2>Base Fleet vs Spot Fleet</h2>
+      <p class="card-sub">Required capacity vs. how you're covering it.</p>
+      <div class="chart-container" id="sim-chart-stack"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Total Cost vs Base Fleet Capacity</h2>
+        <p class="card-sub">Green = optimal under current assumptions &middot; Red = your setting.</p>
+        <div class="chart-container" id="sim-chart-cost-curve"></div>
+      </div>
+      <div class="card">
+        <h2>Service Level vs Cost</h2>
+        <p class="card-sub">The cost &harr; service trade-off frontier.</p>
+        <div class="chart-container" id="sim-chart-tradeoff"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/simulator.js') }}"></script>
+{% endblock %}

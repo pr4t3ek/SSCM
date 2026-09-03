@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ screen.title }} · CIL Lakhanpur Wagon Strategy</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2218%22 fill=%22%2310182b%22/><text x=%2250%22 y=%2266%22 font-size=%2258%22 text-anchor=%22middle%22 fill=%22%232a78d6%22 font-family=%22system-ui%22>C</text></svg>">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="{{ url_for('static', filename='js/vendor/plotly.min.js') }}" charset="utf-8"></script>
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="org">Coal India Ltd &middot; MCL</div>
+      <div class="title">Lakhanpur Wagon Strategy</div>
+      <div class="subtitle">Freight &amp; Fleet Decision Dashboard</div>
+    </div>
+
+    <div class="sidebar-section-label">Executive</div>
+    <ul class="sidebar-nav main">
+      {% for s in main_screens %}
+      <li><a href="/{{ s.slug }}" class="{{ 'active' if s.slug == screen.slug else '' }}">
+        <span class="code">{{ s.code }}</span><span>{{ s.short }}</span>
+      </a></li>
+      {% endfor %}
+    </ul>
+
+    <div class="sidebar-section-label">Appendix / Analytics</div>
+    <ul class="sidebar-nav appendix">
+      {% for s in appendix_screens %}
+      <li><a href="/{{ s.slug }}" class="{{ 'active' if s.slug == screen.slug else '' }}">
+        <span class="code">{{ s.code }}</span><span>{{ s.title }}</span>
+      </a></li>
+      {% endfor %}
+    </ul>
+
+    <div class="sidebar-footer">
+      <button id="presentation-toggle">Presentation Mode</button>
+      <button id="reset-filters">Reset Filters</button>
+      <button id="download-report" class="primary">Download Report</button>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="crumb">{{ 'Executive' if screen in main_screens else 'Appendix / Analytics' }} &middot; {{ screen.code }}</div>
+        <h1>{{ screen.title }}</h1>
+      </div>
+      <div class="topbar-actions">
+        {% block topbar_actions %}{% endblock %}
+      </div>
+    </div>
+
+    {% block filter_bar %}{% endblock %}
+
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<div class="presentation-hint">&larr; / &rarr; navigate &middot; Esc exit presentation mode</div>
+
+<script>
+  window.MAIN_SCREENS = {{ main_screens | tojson }};
+  window.APPENDIX_SCREENS = {{ appendix_screens | tojson }};
+  window.CURRENT_SLUG = {{ screen.slug | tojson }};
+  window.MODEL_RESULT_LABEL = "Model-based result using configured assumptions.";
+</script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/assumptions-store.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

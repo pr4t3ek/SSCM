@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+data/lakhanpur_shift_data.csv
+.DS_Store

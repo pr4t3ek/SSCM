@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Full shift-level analytics behind Screen 04, including the day-of-week breakdown.</p>
+
+<div class="card">
+  <h2>Shift Summary Table</h2>
+  <div class="table-wrap"><table class="data-table" id="shift-table"></table></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Deficit by Day of Week &times; Shift</h2>
+    <div class="chart-container tall" id="chart-dow-heatmap"></div>
+  </div>
+  <div class="card">
+    <h2>Deficit Distribution <span class="qmark">full box plot</span></h2>
+    <div class="chart-container tall" id="chart-box"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Deficit Heatmap <span class="qmark">every date &times; shift</span></h2>
+  <div class="chart-container tall" id="chart-heatmap"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function load() {
+  const r = await fetch('/api/shift-analysis?detail=true');
+  const d = await r.json();
+
+  const rows = d.shifts.map(s => `
+    <tr class="${s.shift_label === d.weakest_shift.shift_label ? 'highlight' : ''}">
+      <td>${s.shift_label}</td>
+      <td>${Charts.fmtInt(s.avg_production)}</td>
+      <td>${Charts.fmtInt(s.avg_demand)}</td>
+      <td>${Charts.fmtInt(s.avg_dispatch)}</td>
+      <td>${Charts.fmtInt(s.avg_deficit)}</td>
+      <td>${s.fulfilment_pct.toFixed(1)}%</td>
+      <td>${s.share_of_total_deficit_pct.toFixed(1)}%</td>
+      <td>${s.n}</td>
+    </tr>`).join('');
+  document.getElementById('shift-table').innerHTML = `
+    <thead><tr><th>Shift</th><th>Avg Production</th><th>Avg Demand</th><th>Avg Dispatch</th><th>Avg Deficit</th><th>Fulfilment</th><th>Share of Total Deficit</th><th>N</th></tr></thead>
+    <tbody>${rows}</tbody>`;
+
+  const dow = d.heatmap_day_of_week;
+  const zDow = dow.shift_labels.map((_, si) => dow.days.map((_, di) => dow.values[di][si]));
+  Charts.heatmap('chart-dow-heatmap', { z: zDow, x: dow.days, y: dow.shift_labels }, { layout: { margin: { l: 70, r: 20, t: 10, b: 60 } } });
+
+  const shiftNames = d.shifts.map(s => s.shift_label);
+  Charts.box('chart-box', shiftNames.map((name, i) => ({ name, y: d.distribution[name], color: Charts.COLORS.series[i % 3] })));
+
+  const h = d.heatmap;
+  const z = h.shift_labels.map((_, si) => h.dates.map((_, di) => h.values[di][si]));
+  Charts.heatmap('chart-heatmap', { z, x: h.dates, y: h.shift_labels }, { layout: { margin: { l: 70, r: 20, t: 10, b: 40 } } });
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}

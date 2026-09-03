@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="screen-caption">Is the recommendation robust, or does it change dramatically when assumptions change?</p>
+
+<ul class="insight-list" id="insight-list" style="margin-bottom:18px;"></ul>
+
+<div class="card">
+  <h2>Optimal Base Fleet % <span class="qmark">Demand Growth &times; Wagon Availability</span></h2>
+  <p class="card-sub">Each cell is the cost-optimal base fleet, as a % of the unscaled peak requirement, under that growth/availability combination.</p>
+  <div class="chart-container tall" id="chart-heatmap"></div>
+</div>
+
+<div class="card">
+  <h2>Tornado Chart <span class="qmark">impact on total cost</span></h2>
+  <p class="card-sub">Total cost at the recommended base fleet as each assumption swings across its configured range, holding others fixed.</p>
+  <div class="chart-container tall" id="chart-tornado"></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Shortage Probability <span class="qmark">vs. Base Fleet</span></h2>
+    <div class="chart-container" id="chart-risk-prob"></div>
+  </div>
+  <div class="card">
+    <h2>Expected Unmet Demand <span class="qmark">vs. Base Fleet</span></h2>
+    <div class="chart-container" id="chart-risk-tonnes"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadInsights() {
+  const r = await fetch('/api/insights?screen=sensitivity');
+  const d = await r.json();
+  document.getElementById('insight-list').innerHTML = d.insights.map(i => `<li><span class="dot">&#9679;</span><span>${i}</span></li>`).join('');
+}
+
+async function loadHeatmap() {
+  const qs = await AssumptionsStore.toQueryString();
+  const r = await fetch('/api/sensitivity?type=heatmap&' + qs);
+  const d = await r.json();
+  Charts.heatmap('chart-heatmap', {
+    z: d.optimal_B_pct,
+    x: d.availability_pct.map(v => (v * 100).toFixed(0) + '%'),
+    y: d.demand_growth_pct.map(v => (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%'),
+  }, {
+    layout: { xaxis: { title: 'Wagon Availability' }, yaxis: { title: 'Demand Growth' }, margin: { l: 70, r: 20, t: 10, b: 50 } },
+    hovertemplate: 'Growth %{y} · Availability %{x}<br>Optimal Base Fleet: %{z:.0f}%<extra></extra>',
+  });
+}
+
+async function loadTornado() {
+  const qs = await AssumptionsStore.toQueryString();
+  const r = await fetch('/api/sensitivity?type=tornado&' + qs);
+  const d = await r.json();
+  const params = d.parameters;
+  const trace = {
+    type: 'bar',
+    orientation: 'h',
+    y: params.map(p => p.label),
+    x: params.map(p => p.cost_at_high - p.cost_at_low),
+    base: params.map(p => Math.min(p.cost_at_low, p.cost_at_high)),
+    marker: { color: Charts.COLORS.series[0] },
+    text: params.map(p => Charts.fmtRupee(p.swing) + ' swing'),
+    textposition: 'outside',
+    textfont: { size: 10.5 },
+  };
+  Plotly.react('chart-tornado', [trace], Charts.baseLayout({
+    showlegend: false,
+    xaxis: { title: 'Total Cost (Rs)' },
+    margin: { l: 160, r: 90, t: 10, b: 40 },
+  }), { displayModeBar: false, responsive: true });
+}
+
+async function loadRisk() {
+  const qs = await AssumptionsStore.toQueryString();
+  const r = await fetch('/api/sensitivity?type=risk&' + qs);
+  const d = await r.json();
+  Charts.line('chart-risk-prob', [
+    { x: d.B_values, y: d.shortage_probability_pct.map(v => v * 100), name: 'Shortage Probability', color: Charts.COLORS.critical, fill: true },
+  ], { layout: { showlegend: false, xaxis: { title: 'Base Fleet Capacity (rakes/day)' }, yaxis: { title: '%', ticksuffix: '%' } } });
+  Charts.line('chart-risk-tonnes', [
+    { x: d.B_values, y: d.expected_unmet_tonnes_per_day, name: 'Expected Unmet Tonnes/Day', color: Charts.COLORS.series[3], fill: true },
+  ], { layout: { showlegend: false, xaxis: { title: 'Base Fleet Capacity (rakes/day)' }, yaxis: { title: 'Tonnes/day' } } });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadInsights();
+  loadHeatmap();
+  loadTornado();
+  loadRisk();
+});
+</script>
+{% endblock %}
